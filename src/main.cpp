@@ -226,11 +226,16 @@ GLuint createShaderProgram(const std::string& vertexShaderPath, const std::strin
 //______________________________________________________RENDER_______________________________________________________//
 
 void render(GLuint shaderProgram, GLuint vao) {
-	glUseProgram(shaderProgram);
+    glUseProgram(shaderProgram);
 
     // Set up view and projection matrices
     glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-    glm::mat4 projection = glm::perspective(glm::radians(fov), 1920.0f / 1080.0f, 0.1f, 100.0f);
+    
+    // Define the near and far clipping planes
+    float nearClip = 0.0f;
+    float farClip = 100.0f;
+    
+    glm::mat4 projection = glm::perspective(glm::radians(fov), 1920.0f / 1080.0f, nearClip, farClip);
 
     // Send the matrices to the shader
     GLint viewLoc = glGetUniformLocation(shaderProgram, "view");
