@@ -23,7 +23,7 @@ float deltaTime = 0.0f;  // Time between current frame and last frame
 float lastFrame = 0.0f;  // Time of last frame
 
 // Movement speeds for camera movement
-float movementSpeed = 20.0f;
+float movementSpeed = 30.0f;
 float mouseSensitivity = 0.1f;
 
 // Global vector to store sphere indices for rendering
