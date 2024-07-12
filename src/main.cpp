@@ -6,6 +6,24 @@
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+// Camera parameters
+glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
+glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+float yaw = -90.0f;
+float pitch = 0.0f;
+float lastX = 960.0f, lastY = 540.0f;
+bool firstMouse = true;
+float fov = 45.0f;
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
+
+// Movement speeds
+float movementSpeed = 10.0f;
+float mouseSensitivity = 0.1f;
 
 //________________________________________________CALLBACK_FUNCTIONS_________________________________________________//
 
@@ -14,14 +32,51 @@ static void errorCallback(int error, const char* description) {
 }
 
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-	// close window when ESC has been pressed
-	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		glfwSetWindowShouldClose(window, GL_TRUE);
+    // close window when ESC has been pressed
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, GL_TRUE);
+    float cameraSpeed = movementSpeed * deltaTime;
+    if (key == GLFW_KEY_W)
+        cameraPos += cameraSpeed * cameraFront;
+    if (key == GLFW_KEY_S)
+        cameraPos -= cameraSpeed * cameraFront;
+    if (key == GLFW_KEY_A)
+        cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+    if (key == GLFW_KEY_D)
+        cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
 }
 
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {}
 
-static void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {}
+static void mousePositionCallback(GLFWwindow* window, double xpos, double ypos) {
+    if (firstMouse) {
+        lastX = xpos;
+        lastY = ypos;
+        firstMouse = false;
+    }
+
+    float xoffset = xpos - lastX;
+    float yoffset = lastY - ypos; // reversed since y-coordinates range from bottom to top
+    lastX = xpos;
+    lastY = ypos;
+
+    xoffset *= mouseSensitivity;
+    yoffset *= mouseSensitivity;
+
+    yaw += xoffset;
+    pitch += yoffset;
+
+    if (pitch > 89.0f)
+        pitch = 89.0f;
+    if (pitch < -89.0f)
+        pitch = -89.0f;
+
+    glm::vec3 front;
+    front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    front.y = sin(glm::radians(pitch));
+    front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    cameraFront = glm::normalize(front);
+}
 
 static void framebufferSizeCallback(GLFWwindow* window, int w, int h) { glViewport(0, 0, w, h); }
 
@@ -72,6 +127,9 @@ GLFWwindow* initialize(int width, int height, const std::string& title) {
 
 	// set the clear color of the window
 	glClearColor(0.3f, 0.3f, 0.3f, 0.0f);
+
+	// Hide the mouse cursor and capture it within the window
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	return window;
 }
@@ -169,8 +227,25 @@ GLuint createShaderProgram(const std::string& vertexShaderPath, const std::strin
 
 void render(GLuint shaderProgram, GLuint vao) {
 	glUseProgram(shaderProgram);
-	glBindVertexArray(vao);
-	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    // Set up view and projection matrices
+    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+    glm::mat4 projection = glm::perspective(glm::radians(fov), 1920.0f / 1080.0f, 0.1f, 100.0f);
+
+    // Send the matrices to the shader
+    GLint viewLoc = glGetUniformLocation(shaderProgram, "view");
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+
+    GLint projLoc = glGetUniformLocation(shaderProgram, "projection");
+    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+    // Model matrix
+    glm::mat4 model = glm::mat4(1.0f);
+    GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+    glBindVertexArray(vao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
 //______________________________________________________CLEANUP______________________________________________________//
@@ -189,7 +264,7 @@ void cleanup(GLFWwindow* window, GLuint& shaderProgram, GLuint& vao) {
 
 int main() {
 	// create a window with the specified width, height and title and initialize OpenGL
-	GLFWwindow* window = initialize(640, 480, "OpenGL Starter Project");
+	GLFWwindow* window = initialize(1920, 1080, "OpenGL Starter Project");
 	GLuint shaderProgram = createShaderProgram(
 		ASSETS_PATH"/shaders/test.vert.glsl",
 		ASSETS_PATH"/shaders/test.frag.glsl");
@@ -197,6 +272,11 @@ int main() {
 
 	// loop until the user presses ESC or the window is closed programmatically
 	while (!glfwWindowShouldClose(window)) {
+		// calculate delta time
+        float currentFrame = glfwGetTime();
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
 		// clear the back buffer with the specified color and the depth buffer with 1
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
