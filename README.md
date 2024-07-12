@@ -2,8 +2,7 @@
 
 ## Overview
 
-This project, titled "Position Based Dynamics Fluid Simulator," aims to develop a comprehensive and versatile fluid simulator using a Position-Based Dynamics (PBD) framework. By integrating Smoothed Particle Hydrodynamics (SPH) within the PBD framework and utilizing OpenGL for rendering, the simulator strives to achieve high fidelity in modeling fluid behavior in real-time. The project aims to push the boundaries of real-time fluid simulations, providing a powerful tool for applications in computer graphics, virtual reality, and scientific research. The resulting simulator will offer precision, performance, and flexibility, enabling detailed and interactive simulations of complex fluid systems.
-
+This project, titled "Position Based Dynamics Fluid Simulator," aims to develop a comprehensive and versatile fluid simulator using a Position-Based Dynamics (PBD) framework. By integrating Smoothed Particle Hydrodynamics (SPH) within the PBD framework and utilizing OpenGL for rendering, the simulator strives to achieve high fidelity in modeling fluid behavior in real-time. 
 
 It is based on the OpenGL starter template provided by [Adrian Derstroff's OpenGL Starter](https://github.com/adrianderstroff/opengl-starter), which is released under the MIT license. The `opengl-starter` project offers a basic framework for compiling and managing various libraries required for OpenGL development.
 
@@ -22,7 +21,7 @@ For specific installation instructions, refer to the [OpenGL Starter README](htt
 
 1.  **Compile the Code**:
     ```bash
-    cmake . && make && cd bin && ./*
+    cmake . && make
     ```
 
 2. **Run the Executable**:
