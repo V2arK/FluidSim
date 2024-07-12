@@ -1,22 +1,17 @@
 #version 460 core
 
-// Input attributes from the vertex buffer
-layout(location = 0) in vec3 aPos;  // The position variable has attribute position 0
-layout(location = 1) in vec3 aColor; // The color variable has attribute position 1
+layout(location = 0) in vec3 aPos;          // Vertex position attribute
+layout(location = 1) in vec3 aColor;        // Vertex color attribute
 
-// Output to the fragment shader
-out vec3 ourColor; // Output variable to pass the color to the fragment shader
+out vec3 ourColor;                         // Output color to fragment shader
 
-// Uniform variables for transformation matrices
-uniform mat4 model;      // Model matrix: used to transform the vertices from local space to world space
-uniform mat4 view;       // View matrix: used to transform the vertices from world space to camera space
-uniform mat4 projection; // Projection matrix: used to project the 3D coordinates into the 2D space of the screen
+uniform mat4 model;                        // Model matrix to transform vertices to world space
+uniform mat4 view;                         // View matrix to transform vertices to camera space
+uniform mat4 projection;                   // Projection matrix to transform vertices to clip space
+uniform vec3 spherePosition;               // Position of the sphere in world space
 
 void main() {
-    // Calculate the position of the vertex by applying the model, view, and projection matrices
-    // to the input position (aPos). The multiplication order is important: projection * view * model.
-    gl_Position = projection * view * model * vec4(aPos, 1.0);
-    
-    // Pass the input color to the fragment shader
-    ourColor = aColor;
+    // Calculate the final position of the vertex by transforming it through model, view, and projection matrices
+    gl_Position = projection * view * model * vec4(aPos + spherePosition, 1.0); 
+    ourColor = aColor;                     // Pass the vertex color to the fragment shader
 }
