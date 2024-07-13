@@ -32,8 +32,8 @@ float movementSpeed = 10.0f;
 float mouseSensitivity = 0.1f;
 
 // Define parameters for the sphere
-int sectorCount = 36;
-int stackCount = 18;
+int sectorCount = 10;
+int stackCount = 5;
 
 // Global vector to store sphere indices for rendering
 std::vector<GLuint> sphereIndices;
