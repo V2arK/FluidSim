@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 
+#include <stdio.h>
+#include <stddef.h>
+
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -313,7 +316,7 @@ GLuint createShaderProgram(const std::string &vertexShaderPath, const std::strin
 }
 
 // Function to render the spheres
-void render(GLuint shaderProgram, GLuint vao, const std::vector<Particle> &particles)
+void render(GLuint shaderProgram, GLuint vao, const std::vector<ParticleInfo> &particles)
 {
 	glUseProgram(shaderProgram); // Use the shader program
 
@@ -360,7 +363,7 @@ void cleanup(GLFWwindow *window, GLuint &shaderProgram, GLuint &vao)
 int main()
 {
 	// Initialize GLFW and create a window
-	GLFWwindow *window = initialize(1920, 1080, "OpenGL Sphere Drawing");
+	GLFWwindow *window = initialize(1920, 1080, "Fluid Simulation");
 
 	// Create the shader program
 	GLuint shaderProgram = createShaderProgram(
@@ -368,10 +371,17 @@ int main()
 		ASSETS_PATH "/shaders/test.frag.glsl");
 
 	// Create buffers for the sphere
-	GLuint vao = createBuffersForSphere(sphereRadius, sectorCount, stackCount);
+	GLuint vao = createBuffersForSphere(PARTICLE_RADIUS, sectorCount, stackCount);
 
-	// initialize globalParticleSystem
-	globalParticleSystem.initialize();
+	// setup particle system
+	ParticleSystem ps;
+    ps.setContainerSize(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.6, 0.6, 0.6));
+    ps.addFluidBlock(glm::vec3(0.05, 0.35, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
+    ps.addFluidBlock(glm::vec3(0.35, 0.05, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
+	ps.addFluidBlock(glm::vec3(0.35, 0.35, 0.05), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
+    ps.updateData();
+    std::cout << "partical num = " << ps.particles.size() << std::endl;
+
 
 	// Main render loop
 	while (!glfwWindowShouldClose(window))
@@ -381,14 +391,14 @@ int main()
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
 
-		// update Particle
-		globalParticleSystem.step(deltaTime);
-
 		// Clear the color and depth buffers
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		// update particles
+		ps.updateData();
+
 		// Render the spheres
-		render(shaderProgram, vao, globalParticleSystem.particles);
+		render(shaderProgram, vao, ps.particles);
 
 		// Swap the front and back buffers
 		glfwSwapBuffers(window);
