@@ -4,17 +4,20 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <algorithm>
+#include <unordered_map>
 
 /* ----------------- Physical Constants -------------------- */
 
-const float SUPPORT_RADIUS = 0.025f;                    // Support radius for smoothing kernels
 const float PARTICLE_RADIUS = 0.005f;                   // Radius of a single particle
+const float SUPPORT_RADIUS = 5.0f * PARTICLE_RADIUS;    // Support radius for smoothing kernels
 const float PARTICLE_DIAMETER = PARTICLE_RADIUS * 2.0f; // Diameter of a particle
 const float GRAVITY = 9.8f;                             // Gravitational acceleration
 const float REFERENCE_DENSITY = 1000.0f;                // Reference density
-const float STIFFNESS_CONSTANT = 5.0f;                  // Stiffness constant for pressure calculation
+const float STIFFNESS_CONSTANT = 50.0f;                 // Stiffness constant for pressure calculation
 const float PRESSURE_EXPONENT = 7.0f;                   // Exponent for the equation of state
 const float VISCOSITY_COEFFICIENT = 8e-6f;              // Viscosity coefficient
+const float DELTA_T = 0.05f;
+const float MAX_VELOCITY = 100.0f;
 
 /* ----------------- Random Generator -------------------- */
 
@@ -39,6 +42,16 @@ namespace PCG32
     {
         return float(double(generate()) / 4294967296.0);
     }
+}
+
+inline unsigned int computeHash(unsigned int x, unsigned int y, unsigned int z)
+{
+    // these magic number is just 3 large primes,
+    // so we can map the 3d coordinate into a hash.
+    const unsigned int p1 = 73856093;
+    const unsigned int p2 = 19349663;
+    const unsigned int p3 = 83492791;
+    return (x * p1) ^ (y * p2) ^ (z * p3);
 }
 
 /* ----------------- Cubic Spline Kernel -------------------- */
@@ -69,11 +82,30 @@ public:
     }
     ~CubicSplineKernel() {}
 
-    // Get precomputed data
-    float_t *getData()
+    // Get precomputed value and gradient based on input distance
+    glm::vec2 getValue(float distance)
     {
-        return (float_t *)valueAndGradientBuffer.data();
+        if (distance < 0.0f || distance > supportRadius)
+        {
+            return glm::vec2(0.0f, 0.0f);
+        }
+
+        float index = distance / supportRadius * bufferSize;
+        uint32_t lowerIndex = static_cast<uint32_t>(index);
+        uint32_t upperIndex = lowerIndex + 1;
+
+        if (upperIndex >= bufferSize)
+        {
+            upperIndex = bufferSize - 1;
+        }
+
+        float t = index - lowerIndex;
+        glm::vec2 lowerValue = valueAndGradientBuffer[lowerIndex];
+        glm::vec2 upperValue = valueAndGradientBuffer[upperIndex];
+
+        return glm::mix(lowerValue, upperValue, t);
     }
+
 
     // Get size of the buffer
     uint32_t getBufferSize() { return bufferSize; }
@@ -138,13 +170,14 @@ private:
 /* ----------------- Particle System -------------------- */
 
 // Structure to hold particle information
-struct ParticleInfo{
+struct ParticleInfo
+{
     alignas(16) glm::vec3 position;
     alignas(16) glm::vec3 velocity;
     alignas(16) glm::vec3 acceleration;
-    alignas(4) float_t density;
-    alignas(4) float_t pressure;
-    alignas(4) float_t pressureOverDensitySquared;
+    alignas(4) float density;
+    alignas(4) float pressure;
+    alignas(4) float pressureOverDensitySquared;
     alignas(4) uint32_t blockId;
 };
 
@@ -154,6 +187,58 @@ public:
     ParticleSystem() {}
     ~ParticleSystem() {}
 
+    /* ----------------- Physic Solver -------------------- */
+
+    void EulerIntegration()
+    {
+        for (auto particle : particles)
+        {
+            particle.velocity += DELTA_T * particle.acceleration;
+            particle.velocity = glm::clamp(particle.velocity, glm::vec3(-MAX_VELOCITY), glm::vec3(MAX_VELOCITY));
+            particle.position += DELTA_T * particle.velocity;
+        }
+    }
+
+    void ComputeDensityAndPressure()
+    {
+        // Params:
+        // - particle: Reference to the Particle object to be updated.
+        // - particles: Vector of all Particle objects.
+        // - kernelBuffer: 1D texture array representing the SPH kernel.
+        // - blockIdOffsets: Vector of offsets for neighboring blocks.
+        // - blockExtents: Vector of block extents for each block.
+
+        for (auto &block : blockOfParticles)
+        {
+            for (auto cur_particle : block.second)
+            {
+
+                for (auto other_particle : block.second)
+                {
+                    if (cur_particle == other_particle)
+                    {
+                        continue;
+                    }
+                    // compute distinct pairis of particles
+                    glm::vec3 radiusIj = cur_particle->position - other_particle->position;
+                    float distanceIj = glm::length(radiusIj);
+                    if (distanceIj <= SUPPORT_RADIUS)
+                    {
+                        cur_particle->density += kernel.getValue(distanceIj / SUPPORT_RADIUS)[0];
+                    }
+                }
+            
+            cur_particle->density *= (volume * REFERENCE_DENSITY);
+            cur_particle->density = std::max(cur_particle->density, REFERENCE_DENSITY);
+            cur_particle->pressure = STIFFNESS_CONSTANT * (std::pow(cur_particle->density / REFERENCE_DENSITY, PRESSURE_EXPONENT) - 1.0f);
+            cur_particle->pressureOverDensitySquared = cur_particle->pressure / (cur_particle->density * cur_particle->density);
+
+            }
+        }
+    }
+
+    /* ----------------- Misc functions -------------------- */
+
     // Set container size and initialize blocks
     void setContainerSize(glm::vec3 corner, glm::vec3 size)
     {
@@ -162,27 +247,13 @@ public:
         containerCenter = (lowerBound + upperBound) / 2.0f;
         size = upperBound - lowerBound;
 
-        // Number of blocks in each direction
+        // Number of blocks in each direction for computation
         blockCount.x = floor(size.x / SUPPORT_RADIUS);
         blockCount.y = floor(size.y / SUPPORT_RADIUS);
         blockCount.z = floor(size.z / SUPPORT_RADIUS);
 
         // Size of each block
         blockSize = glm::vec3(size.x / blockCount.x, size.y / blockCount.y, size.z / blockCount.z);
-
-        blockIdOffsets.resize(27);
-        int index = 0;
-        for (int k = -1; k <= 1; k++)
-        {
-            for (int j = -1; j <= 1; j++)
-            {
-                for (int i = -1; i <= 1; i++)
-                {
-                    blockIdOffsets[index] = blockCount.x * blockCount.y * k + blockCount.x * j + i;
-                    index++;
-                }
-            }
-        }
 
         particles.clear();
     }
@@ -216,6 +287,7 @@ public:
             {
                 for (int z = 0; z < particleCount.z; z++)
                 {
+                    // populate vector newParticles with particles one by one
                     float offsetX = (x + PCG32::randomFloat()) * particleSpacing;
                     float offsetY = (y + PCG32::randomFloat()) * particleSpacing;
                     float offsetZ = (z + PCG32::randomFloat()) * particleSpacing;
@@ -248,33 +320,19 @@ public:
         uint32_t column = floor(deltaPosition.x / blockSize.x);
         uint32_t row = floor(deltaPosition.y / blockSize.y);
         uint32_t height = floor(deltaPosition.z / blockSize.z);
-        return height * blockCount.x * blockCount.y + row * blockCount.x + column;
+        return computeHash(row, column, height);
     }
 
-    // Update particle data and sort by block ID
+    // sort particles into blockOfParticles, key is computeHash()
     void updateData()
     {
-        std::sort(particles.begin(), particles.end(),
-                  [=](ParticleInfo &first, ParticleInfo &second)
-                  {
-                      return first.blockId < second.blockId;
-                  });
-
-        // Calculate block extents
-        blockExtents = std::vector<glm::uvec2>(blockCount.x * blockCount.y * blockCount.z, glm::uvec2(0, 0));
-        int currentBlockId = 0;
-        int left = 0;
-        int right;
-        for (right = 0; right < particles.size(); right++)
+        blockOfParticles.clear();
+        // Assign particles to cells
+        for (auto it : particles)
         {
-            if (particles[right].blockId != currentBlockId)
-            {
-                blockExtents[currentBlockId] = glm::uvec2(left, right); // Left inclusive, right exclusive
-                left = right;
-                currentBlockId = particles[right].blockId;
-            }
+            unsigned int hashValue = getBlockIdByPosition(it.position);
+            blockOfParticles[hashValue].push_back(&it);
         }
-        blockExtents[currentBlockId] = glm::uvec2(left, right);
     }
 
 public:
@@ -288,8 +346,10 @@ public:
     float viscosityCoefficient = VISCOSITY_COEFFICIENT; // Viscosity coefficient
     float pressureExponent = PRESSURE_EXPONENT;         // Pressure exponent
     int stiffnessConstant = STIFFNESS_CONSTANT;         // Stiffness
-    std::vector<ParticleInfo> particles;
-    int maxNeighbors = 512;
+    std::vector<ParticleInfo> particles;                // the particles lives here
+
+    // each blocks of particles, key is from computeHash().
+    std::unordered_map<unsigned int, std::vector<ParticleInfo *>> blockOfParticles;
 
     // Container parameters
     glm::vec3 lowerBound = glm::vec3(FLT_MAX);
@@ -297,8 +357,6 @@ public:
     glm::vec3 containerCenter = glm::vec3(0.0f);
     glm::uvec3 blockCount = glm::uvec3(0); // Number of blocks in XYZ directions
     glm::vec3 blockSize = glm::vec3(0.0f);
-    std::vector<glm::uvec2> blockExtents;
-    std::vector<int32_t> blockIdOffsets;
 
     // Smoothing kernel function
     CubicSplineKernel kernel = CubicSplineKernel(supportRadius);

@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stddef.h>
+#include <cstddef>
 
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -37,6 +38,8 @@ int stackCount = 5;
 
 // Global vector to store sphere indices for rendering
 std::vector<GLuint> sphereIndices;
+
+/* ----------------- Call Back Func -------------------- */
 
 // Callback function to handle GLFW errors
 static void errorCallback(int error, const char *description)
@@ -109,6 +112,9 @@ static void framebufferSizeCallback(GLFWwindow *window, int w, int h)
 	glViewport(0, 0, w, h); // Update the OpenGL viewport to match the new window size
 }
 
+
+/* ----------------- Initializer -------------------- */
+
 // Function to initialize GLFW and create a window with specified dimensions and title
 GLFWwindow *initialize(int width, int height, const std::string &title)
 {
@@ -165,6 +171,8 @@ GLFWwindow *initialize(int width, int height, const std::string &title)
 
 	return window;
 }
+
+/* ----------------- Sphere generation -------------------- */
 
 // Struct to hold vertex data (position and color)
 struct Vertex
@@ -264,6 +272,8 @@ GLuint createBuffersForSphere(float radius, int sectorCount, int stackCount)
 	return vao;
 }
 
+/* ----------------- Shader related -------------------- */
+
 // Function to compile a shader from a file
 GLuint compileShader(const std::string &path, GLenum shaderType)
 {
@@ -359,7 +369,7 @@ void cleanup(GLFWwindow *window, GLuint &shaderProgram, GLuint &vao)
 	glfwTerminate();		   // Terminate GLFW
 }
 
-// Main function
+/* ----------------- Main Loop -------------------- */
 int main()
 {
 	// Initialize GLFW and create a window
@@ -375,13 +385,12 @@ int main()
 
 	// setup particle system
 	ParticleSystem ps;
-    ps.setContainerSize(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.6, 0.6, 0.6));
-    ps.addFluidBlock(glm::vec3(0.05, 0.35, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
-    ps.addFluidBlock(glm::vec3(0.35, 0.05, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
+	ps.setContainerSize(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.6, 0.6, 0.6));
+	ps.addFluidBlock(glm::vec3(0.05, 0.35, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
+	ps.addFluidBlock(glm::vec3(0.35, 0.05, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
 	ps.addFluidBlock(glm::vec3(0.35, 0.35, 0.05), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
-    ps.updateData();
-    std::cout << "partical num = " << ps.particles.size() << std::endl;
-
+	ps.updateData();
+	std::cout << "partical num = " << ps.particles.size() << std::endl;
 
 	// Main render loop
 	while (!glfwWindowShouldClose(window))
