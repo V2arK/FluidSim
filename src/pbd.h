@@ -12,12 +12,14 @@ const float PARTICLE_RADIUS = 0.005f;                   // Radius of a single pa
 const float SUPPORT_RADIUS = 5.0f * PARTICLE_RADIUS;    // Support radius for smoothing kernels
 const float PARTICLE_DIAMETER = PARTICLE_RADIUS * 2.0f; // Diameter of a particle
 const float GRAVITY = 9.8f;                             // Gravitational acceleration
-const float REFERENCE_DENSITY = 1000.0f;                // Reference density
-const float STIFFNESS_CONSTANT = 50.0f;                 // Stiffness constant for pressure calculation
-const float PRESSURE_EXPONENT = 7.0f;                   // Exponent for the equation of state
-const float VISCOSITY_COEFFICIENT = 8e-6f;              // Viscosity coefficient
-const float DELTA_T = 0.05f;
-const float MAX_VELOCITY = 100.0f;
+const glm::vec3 GRAVITY_DIR = glm::vec3(0.0, -1.0, 0.0);
+const float REFERENCE_DENSITY = 1000.0f;   // Reference density
+const float STIFFNESS_CONSTANT = 50.0f;    // Stiffness constant for pressure calculation
+const float PRESSURE_EXPONENT = 7.0f;      // Exponent for the equation of state
+const float VISCOSITY_COEFFICIENT = 8e-6f; // Viscosity coefficient
+const float DELTA_T = 0.003f;              // delta for euler intergration
+const float MAX_VELOCITY = 100.0f;         // max velocity of particle
+const float VELOCITY_ATTENUATION = 0.9f;   // for when bouncing off the border
 
 /* ----------------- Random Generator -------------------- */
 
@@ -106,11 +108,9 @@ public:
         return glm::mix(lowerValue, upperValue, t);
     }
 
-
     // Get size of the buffer
     uint32_t getBufferSize() { return bufferSize; }
 
-private:
     // Calculate spline value for a given distance
     float calculateValue(float distance)
     {
@@ -191,7 +191,7 @@ public:
 
     void EulerIntegration()
     {
-        for (auto particle : particles)
+        for (auto &particle : particles)
         {
             particle.velocity += DELTA_T * particle.acceleration;
             particle.velocity = glm::clamp(particle.velocity, glm::vec3(-MAX_VELOCITY), glm::vec3(MAX_VELOCITY));
@@ -201,17 +201,66 @@ public:
 
     void ComputeDensityAndPressure()
     {
-        // Params:
-        // - particle: Reference to the Particle object to be updated.
-        // - particles: Vector of all Particle objects.
-        // - kernelBuffer: 1D texture array representing the SPH kernel.
-        // - blockIdOffsets: Vector of offsets for neighboring blocks.
-        // - blockExtents: Vector of block extents for each block.
+        // Clear the densities and pressure before computation
+        for (auto &particle : particles)
+        {
+            particle.density = REFERENCE_DENSITY;
+            particle.pressure = 0.0f;
+        }
+
+        // Iterate over each particle to compute density
+        for (auto &block : blockOfParticles)
+        {
+            for (auto cur_particle : block.second)
+            {
+                for (auto neighbor_particle : block.second)
+                {
+                    if (cur_particle == neighbor_particle)
+                    {
+                        continue;
+                    }
+                    // compute all distintive pair of neighbouring particles
+                    glm::vec3 radius_ij = cur_particle->position - neighbor_particle->position;
+                    float distance_ij = glm::length(radius_ij);
+
+                    if (distance_ij < SUPPORT_RADIUS)
+                    {
+                        cur_particle->density += kernel.calculateValue(distance_ij);
+                    }
+                }
+
+                cur_particle->density *= (volume * REFERENCE_DENSITY);
+                // Ensure the fluid do not expand
+                cur_particle->density = std::max(cur_particle->density, REFERENCE_DENSITY);
+
+                // Calculate pressure using the equation of state
+                cur_particle->pressure = STIFFNESS_CONSTANT * (std::powf(cur_particle->density / REFERENCE_DENSITY, PRESSURE_EXPONENT) - 1.0f);
+
+                // Precompute pressure over density squared for later use in force calculations
+                cur_particle->pressureOverDensitySquared = cur_particle->pressure / (cur_particle->density * cur_particle->density);
+            }
+        }
+    }
+    
+    
+    // Compute Acceleration
+    void ComputeAcceleration()
+    {
+
+        for (auto it = particles.begin(); it != particles.end(); ++it)
+        {
+            // we add gravity here (initialize)
+            it->acceleration = GRAVITY_DIR * GRAVITY;
+        }
 
         for (auto &block : blockOfParticles)
         {
             for (auto cur_particle : block.second)
             {
+                const float DIM = 3.0f;
+                const float CONST_FACTOR = 2.0f * (DIM + 2.0f) * VISCOSITY_COEFFICIENT;
+                glm::vec3 viscosityForce = glm::vec3(0.0f);
+                glm::vec3 pressureForce = glm::vec3(0.0f);
 
                 for (auto other_particle : block.second)
                 {
@@ -219,20 +268,62 @@ public:
                     {
                         continue;
                     }
-                    // compute distinct pairis of particles
+
                     glm::vec3 radiusIj = cur_particle->position - other_particle->position;
                     float distanceIj = glm::length(radiusIj);
                     if (distanceIj <= SUPPORT_RADIUS)
                     {
-                        cur_particle->density += kernel.getValue(distanceIj / SUPPORT_RADIUS)[0];
+                        float dotDvToRad = glm::dot(cur_particle->velocity - other_particle->velocity, radiusIj);
+                        float denom = distanceIj * distanceIj + 0.01f * SUPPORT_RADIUS * SUPPORT_RADIUS;
+                        float wGrad = kernel.calculateGradientFactor(distanceIj);
+                        viscosityForce += (volume * REFERENCE_DENSITY / other_particle->density) * dotDvToRad * wGrad / denom;
+                        pressureForce += other_particle->density * (cur_particle->pressureOverDensitySquared + other_particle->pressureOverDensitySquared) * wGrad;
                     }
                 }
-            
-            cur_particle->density *= (volume * REFERENCE_DENSITY);
-            cur_particle->density = std::max(cur_particle->density, REFERENCE_DENSITY);
-            cur_particle->pressure = STIFFNESS_CONSTANT * (std::pow(cur_particle->density / REFERENCE_DENSITY, PRESSURE_EXPONENT) - 1.0f);
-            cur_particle->pressureOverDensitySquared = cur_particle->pressure / (cur_particle->density * cur_particle->density);
+                cur_particle->acceleration += viscosityForce * CONST_FACTOR;
+                cur_particle->acceleration -= pressureForce * volume;
+            }
+        }
+    }
 
+    void BoundaryCheck()
+    {
+        for (auto &particle : particles)
+        {
+            // Check x-axis
+            if (particle.position.x > upperBound.x)
+            {
+                particle.position.x = upperBound.x;
+                particle.velocity.x *= -VELOCITY_ATTENUATION;
+            }
+            else if (particle.position.x < lowerBound.x)
+            {
+                particle.position.x = lowerBound.x;
+                particle.velocity.x *= -VELOCITY_ATTENUATION;
+            }
+
+            // Check y-axis
+            if (particle.position.y > upperBound.y)
+            {
+                particle.position.y = upperBound.y;
+                particle.velocity.y *= -VELOCITY_ATTENUATION;
+            }
+            else if (particle.position.y < lowerBound.y)
+            {
+                particle.position.y = lowerBound.y;
+                particle.velocity.y *= -VELOCITY_ATTENUATION;
+            }
+
+            // Check z-axis
+            if (particle.position.z > upperBound.z)
+            {
+                particle.position.z = upperBound.z;
+                particle.velocity.z *= -VELOCITY_ATTENUATION;
+            }
+            else if (particle.position.z < lowerBound.z)
+            {
+                particle.position.z = lowerBound.z;
+                particle.velocity.z *= -VELOCITY_ATTENUATION;
             }
         }
     }
@@ -323,16 +414,22 @@ public:
         return computeHash(row, column, height);
     }
 
-    // sort particles into blockOfParticles, key is computeHash()
     void updateData()
     {
+
+        // sort particles into blockOfParticles, key is computeHash()
         blockOfParticles.clear();
-        // Assign particles to cells
-        for (auto it : particles)
+        for (auto it = particles.begin(); it != particles.end(); ++it)
         {
-            unsigned int hashValue = getBlockIdByPosition(it.position);
-            blockOfParticles[hashValue].push_back(&it);
+
+            unsigned int hashValue = getBlockIdByPosition(it->position);
+            blockOfParticles[hashValue].push_back(&(*it));
         }
+
+        ComputeDensityAndPressure();
+        ComputeAcceleration();
+        BoundaryCheck();
+        EulerIntegration();
     }
 
 public:

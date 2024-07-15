@@ -17,7 +17,7 @@
 #include "pbd.h"
 
 // Camera parameters for setting up the view matrix
-glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);	  // Camera position
+glm::vec3 cameraPos = glm::vec3(0.2f, 0.2f, 1.5f);	  // Camera position
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f); // Camera direction
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);	  // Camera up vector
 float yaw = -90.0f;									  // Initial yaw angle
@@ -157,7 +157,7 @@ GLFWwindow *initialize(int width, int height, const std::string &title)
 	// Set GLFW callback functions for input handling
 	glfwSetKeyCallback(window, keyCallback);
 	glfwSetMouseButtonCallback(window, mouseButtonCallback);
-	glfwSetCursorPosCallback(window, mousePositionCallback);
+	//glfwSetCursorPosCallback(window, mousePositionCallback);
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
 	// Set the clear color for the window
@@ -167,7 +167,7 @@ GLFWwindow *initialize(int width, int height, const std::string &title)
 	glEnable(GL_DEPTH_TEST);
 
 	// Hide the mouse cursor and capture it within the window
-	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	//glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	return window;
 }
