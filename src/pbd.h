@@ -25,12 +25,12 @@ const float VELOCITY_ATTENUATION = 0.9f;   // Velocity attenuation factor for pa
 const float GRAVITY = 9.8f;                               // Gravitational acceleration
 const glm::vec2 GRAVITY_DIRECTION = glm::vec2(0.0, -1.0); // Direction of gravity
 
-const float PARTICLE_RADIUS = 0.005f;                                 // Radius of each particle
-const float SUPPORT_RADIUS = 5.0f * PARTICLE_RADIUS;                  // Support radius for smoothing kernels
-const float SUPPORT_RADIUS_SQUARED = SUPPORT_RADIUS * SUPPORT_RADIUS; // Square of the support radius
-const float PARTICLE_DIAMETER = PARTICLE_RADIUS * 2.0f;               // Diameter of a particle
-const float PARTICLE_VOLUME = 0.8f * std::powf(PARTICLE_DIAMETER, 2); // Volume of a particle
-const float PARTICLE_MASS = REFERENCE_DENSITY * PARTICLE_VOLUME;      // Mass of a particle
+const float PARTICLE_RADIUS = 0.005f;                                     // Radius of each particle
+const float SUPPORT_RADIUS = 5.0f * PARTICLE_RADIUS;                      // Support radius for smoothing kernels
+const float SUPPORT_RADIUS_SQUARED = SUPPORT_RADIUS * SUPPORT_RADIUS;     // Square of the support radius
+const float PARTICLE_DIAMETER = PARTICLE_RADIUS * 2.0f;                   // Diameter of a particle
+const float PARTICLE_AREA = 0.8f * PARTICLE_DIAMETER * PARTICLE_DIAMETER; // Area of a particle
+const float PARTICLE_MASS = REFERENCE_DENSITY * PARTICLE_AREA;            // Mass of a particle
 
 /* ----------------- Random Generator -------------------- */
 
@@ -195,10 +195,12 @@ public:
     ParticleSystem() : kernel_(SUPPORT_RADIUS) {}
     ~ParticleSystem() = default;
 
-    void SetContainerSize(glm::vec2 corner, glm::vec2 size)
+    void SetContainerSize(glm::vec2 lowerCorner, glm::vec2 upperCorner)
     {
-        lowerBound_ = corner;
-        upperBound_ = corner + size;
+        lowerBound_ = lowerCorner;
+        upperBound_ = upperCorner;
+
+        glm::vec2 size = upperBound_ - lowerBound_;
 
         blockRowCount_ = static_cast<uint32_t>(floor(size.y / SUPPORT_RADIUS));
         blockColumnCount_ = static_cast<uint32_t>(floor(size.x / SUPPORT_RADIUS));
@@ -367,7 +369,7 @@ public:
                     {
                         density += kernel_.Value(neighborInfo.distance); // Sum contributions from neighboring particles
                     }
-                    density *= (PARTICLE_VOLUME * REFERENCE_DENSITY);             // Scale density by particle volume and reference density
+                    density *= (PARTICLE_AREA * REFERENCE_DENSITY);               // Scale density by particle area and reference density
                     particleDensities_[i] = std::max(density, REFERENCE_DENSITY); // Prevent expansion
                 }
 
@@ -402,7 +404,7 @@ public:
     void UpdateViscosityAcceleration()
     {
         float dimension = 2.0f;                                                    // Dimensionality of the simulation
-        float viscosityFactor = 2.0f * (dimension + 2.0f) * VISCOSITY_COEFFICIENT; // Constant factor for viscosity 
+        float viscosityFactor = 2.0f * (dimension + 2.0f) * VISCOSITY_COEFFICIENT; // Constant factor for viscosity
         std::vector<std::thread> threads;
 
         auto worker = [this, viscosityFactor](unsigned int start, unsigned int end)
@@ -488,7 +490,7 @@ public:
                         int j = neighborInfo.particleIndex;
                         pressureForce += particleDensities_[j] * (pressureOverDensitySquared[i] + pressureOverDensitySquared[j]) * kernel_.Gradient(neighborInfo.radiusVector); // Sum pressure forces
                     }
-                    particleAccelerations_[i] -= pressureForce * PARTICLE_VOLUME; // Update acceleration with pressure force
+                    particleAccelerations_[i] -= pressureForce * PARTICLE_AREA; // Update acceleration with pressure force
                 }
             }
         };
@@ -514,41 +516,41 @@ public:
 
     void EulerIntegrate()
     {
-        
-    std::vector<std::thread> threads;
 
-    auto worker = [this](unsigned int start, unsigned int end)
-    {
-        for (unsigned int i = start; i < end; i++)
+        std::vector<std::thread> threads;
+
+        auto worker = [this](unsigned int start, unsigned int end)
         {
-            particleVelocities_[i] += TIME_STEP * particleAccelerations_[i];                                    // Update velocity using acceleration
-            particleVelocities_[i] = glm::clamp(particleVelocities_[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
-            particlePositions_[i] += TIME_STEP * particleVelocities_[i];                                        // Update position using velocity
-        }
-    };
+            for (unsigned int i = start; i < end; i++)
+            {
+                particleVelocities_[i] += TIME_STEP * particleAccelerations_[i];                                    // Update velocity using acceleration
+                particleVelocities_[i] = glm::clamp(particleVelocities_[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
+                particlePositions_[i] += TIME_STEP * particleVelocities_[i];                                        // Update position using velocity
+            }
+        };
 
-    const unsigned int particlesPerThread = particlePositions_.size() / THREAD_COUNT;
-    unsigned int start = 0;
+        const unsigned int particlesPerThread = particlePositions_.size() / THREAD_COUNT;
+        unsigned int start = 0;
 
-    for (unsigned int t = 0; t < THREAD_COUNT; t++)
-    {
-        unsigned int end = (t == THREAD_COUNT - 1) ? particlePositions_.size() : start + particlesPerThread;
-        threads.emplace_back(worker, start, end);
-        start = end;
-    }
-
-    for (auto &thread : threads)
-    {
-        if (thread.joinable())
+        for (unsigned int t = 0; t < THREAD_COUNT; t++)
         {
-            thread.join();
+            unsigned int end = (t == THREAD_COUNT - 1) ? particlePositions_.size() : start + particlesPerThread;
+            threads.emplace_back(worker, start, end);
+            start = end;
         }
-    }
+
+        for (auto &thread : threads)
+        {
+            if (thread.joinable())
+            {
+                thread.join();
+            }
+        }
     }
 
     void ApplyBoundaryConditions()
     {
-        
+
         std::vector<std::thread> threads;
 
         auto worker = [this](unsigned int start, unsigned int end)
@@ -648,12 +650,12 @@ public:
     std::vector<float> particlePressures_;             // Pressures of particles
     std::vector<std::vector<NeighborInfo>> neighbors_; // Neighbor information for particles
 
-    glm::vec2 lowerBound_;    // Lower bound of the container
-    glm::vec2 upperBound_;      // Upper bound of the container
-    std::vector<std::vector<unsigned int>> blocks_;     // Blocks for spatial partitioning
-    glm::vec2 blockSize_;       // Size of each block
-    uint32_t blockRowCount_ = 4;                        // Number of block rows
-    uint32_t blockColumnCount_ = 4;                     // Number of block columns
+    glm::vec2 lowerBound_;                          // Lower bound of the container
+    glm::vec2 upperBound_;                          // Upper bound of the container
+    std::vector<std::vector<unsigned int>> blocks_; // Blocks for spatial partitioning
+    glm::vec2 blockSize_;                           // Size of each block
+    uint32_t blockRowCount_ = 4;                    // Number of block rows
+    uint32_t blockColumnCount_ = 4;                 // Number of block columns
 };
 
 #endif // PARTICLE_SYSTEM_H

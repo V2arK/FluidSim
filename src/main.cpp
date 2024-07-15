@@ -381,12 +381,12 @@ int main()
 		ASSETS_PATH "/shaders/test.frag.glsl");
 
 	// Create buffers for the sphere
-	GLuint vao = createBuffersForSphere(PARTICLE_RADIUS, sectorCount, stackCount);
+	GLuint vao = createBuffersForSphere(PARTICLE_RADIUS + 0.002f, sectorCount, stackCount);
 
 	// setup particle system
 	ParticleSystem ps;
-	ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(2.0, 1.5));
-	ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.4, 0.4), glm::vec2(-2.0f, -10.0f), 0.01f * 0.7f);
+	ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(1.0, 0.5));
+	ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.4, 0.4), glm::vec2(-2.0f, -10.0f), 0.007f);
 	std::cout << "partical num = " << ps.particlePositions_.size() << std::endl;
 
 	// Main render loop
