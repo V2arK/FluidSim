@@ -211,10 +211,10 @@ public:
         particleAccelerations_.clear();
     }
 
-    unsigned int AddFluidBlock(glm::vec2 corner, glm::vec2 size, glm::vec2 initialVelocity, float particleSpacing)
+    unsigned int AddFluidBlock(glm::vec2 blockLowerBound, glm::vec2 blockUpperBound, glm::vec2 initialVelocity = glm::vec2(0.0f, 0.0f), float particleSpacing = 0.007f)
     {
-        glm::vec2 blockLowerBound = corner;
-        glm::vec2 blockUpperBound = corner + size;
+        
+        glm::vec2 size = blockUpperBound - blockLowerBound;
 
         if (blockLowerBound.x < lowerBound_.x ||
             blockLowerBound.y < lowerBound_.y ||
@@ -236,7 +236,7 @@ public:
         {
             for (int j = 0; j < width; j++)
             {
-                positions[particleIndex] = corner + glm::vec2((j + PCG32::randomFloat()) * particleSpacing, (i + PCG32::randomFloat()) * particleSpacing);
+                positions[particleIndex] = blockLowerBound + glm::vec2((j + PCG32::randomFloat()) * particleSpacing, (i + PCG32::randomFloat()) * particleSpacing);
                 particleIndex++;
             }
         }

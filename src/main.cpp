@@ -386,7 +386,7 @@ int main()
 	// setup particle system
 	ParticleSystem ps;
 	ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(1.0, 0.5));
-	ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.4, 0.4), glm::vec2(-2.0f, -10.0f), 0.007f);
+	ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.2, 0.2));
 	std::cout << "partical num = " << ps.particlePositions_.size() << std::endl;
 
 	// Main render loop
