@@ -389,8 +389,6 @@ int main()
 	ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.4, 0.4), glm::vec2(-2.0f, -10.0f), 0.01f * 0.7f);
 	std::cout << "partical num = " << ps.mPositions.size() << std::endl;
 
-	Solver sv(ps);
-
 	// Main render loop
 	while (!glfwWindowShouldClose(window))
 	{
@@ -404,7 +402,7 @@ int main()
 
 		// update particles
 		ps.SearchNeighbors();
-		sv.Iterate();
+		ps.Iterate();
 
 		// Render the spheres
 		render(shaderProgram, vao, ps.mPositions);

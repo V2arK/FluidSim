@@ -191,7 +191,7 @@ struct NeighborInfo
 class ParticleSystem
 {
 public:
-    ParticleSystem() = default;
+    ParticleSystem(): mW(SUPPORT_RADIUS) {}
     ~ParticleSystem() = default;
 
     // Set the size of the container where particles are confined
@@ -325,6 +325,145 @@ public:
         }
     }
 
+    // Perform solver iteration to update particle states
+    void Iterate()
+    {
+        UpdateDensityAndPressure();    // Update densities and pressures of particles
+        InitAcceleration();            // Initialize accelerations of particles
+        UpdateViscosityAcceleration(); // Update accelerations due to viscosity
+        UpdatePressureAcceleration();  // Update accelerations due to pressure
+        EulerIntegrate();              // Integrate positions and velocities using Euler method
+        BoundaryCondition();           // Apply boundary conditions to particles
+    }
+
+
+    // Update density and pressure for all particles
+    void UpdateDensityAndPressure()
+    {
+        mDensity.assign(mPositions.size(), REFERENCE_DENSITY); // Initialize densities to reference value
+        mPressure.assign(mPositions.size(), 0.0f);             // Initialize pressures to zero
+
+        for (unsigned int i = 0; i < mPositions.size(); i++)
+        {
+            if (!mNeighbors.empty())
+            {
+                float density = 0;
+                for (const auto &nInfo : mNeighbors[i])
+                {
+                    density += mW.Value(nInfo.distance); // Sum contributions from neighboring particles
+                }
+                density *= (PARTICLE_VOLUME * REFERENCE_DENSITY);       // Scale density by particle volume and reference density
+                mDensity[i] = std::max(density, REFERENCE_DENSITY); // Prevent expansion
+            }
+
+            // Update pressure using the equation of state
+            mPressure[i] = STIFFNESS_CONSTANT * (std::powf(mDensity[i] / REFERENCE_DENSITY, PRESSURE_EXPONENT) - 1.0f);
+        }
+    }
+
+    // Initialize acceleration for all particles
+    void InitAcceleration()
+    {
+        std::fill(mAcceleration.begin() + mStartIndex, mAcceleration.end(), glm::vec2(0.0f, -GRAVITY)); // Initialize accelerations to gravity
+    }
+
+    // Update viscosity acceleration for all particles
+    void UpdateViscosityAcceleration()
+    {
+        float dim = 2.0f;                                                // Dimensionality of the simulation
+        float constFactor = 2.0f * (dim + 2.0f) * VISCOSITY_COEFFICIENT; // Constant factor for viscosity calculation
+
+        for (unsigned int i = mStartIndex; i < mPositions.size(); i++)
+        {
+            if (!mNeighbors.empty())
+            {
+                glm::vec2 viscosityForce(0.0f, 0.0f);
+                for (const auto &nInfo : mNeighbors[i])
+                {
+                    int j = nInfo.index;
+                    float dotDvToRad = glm::dot(mVelocity[i] - mVelocity[j], nInfo.radius);                   // Dot product of velocity difference and radius
+                    float denom = nInfo.distance2 + 0.01f * SUPPORT_RADIUS2;                                          // Denominator for viscosity calculation
+                    viscosityForce += (PARTICLE_MASS / mDensity[j]) * dotDvToRad * mW.Grad(nInfo.radius) / denom; // Sum viscosity forces
+                }
+                viscosityForce *= constFactor;          // Scale viscosity force
+                mAcceleration[i] += viscosityForce; // Update acceleration with viscosity force
+            }
+        }
+    }
+
+    // Update pressure acceleration for all particles
+    void UpdatePressureAcceleration()
+    {
+        std::vector<float> pressDivDens2(mPositions.size(), 0);
+
+        for (unsigned int i = 0; i < mPositions.size(); i++)
+        {
+            pressDivDens2[i] = mPressure[i] / std::powf(mDensity[i], 2); // Precompute pressure divided by density squared
+        }
+
+        for (unsigned int i = mStartIndex; i < mPositions.size(); i++)
+        {
+            if (!mNeighbors.empty())
+            {
+                glm::vec2 pressureForce(0.0f, 0.0f);
+                for (const auto &nInfo : mNeighbors[i])
+                {
+                    int j = nInfo.index;
+                    pressureForce += mDensity[j] * (pressDivDens2[i] + pressDivDens2[j]) * mW.Grad(nInfo.radius); // Sum pressure forces
+                }
+                mAcceleration[i] -= pressureForce * PARTICLE_VOLUME; // Update acceleration with pressure force
+            }
+        }
+    }
+
+    // Integrate particle velocities and positions using Euler integration
+    void EulerIntegrate()
+    {
+        for (unsigned int i = mStartIndex; i < mPositions.size(); i++)
+        {
+            mVelocity[i] += DELTA_T * mAcceleration[i];                                     // Update velocity using acceleration
+            mVelocity[i] = glm::clamp(mVelocity[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
+            mPositions[i] += DELTA_T * mVelocity[i];                                        // Update position using velocity
+        }
+    }
+
+    // Apply boundary conditions to ensure particles stay within the container
+    void BoundaryCondition()
+    {
+        for (unsigned int i = 0; i < mPositions.size(); i++)
+        {
+            glm::vec2 &position = mPositions[i];
+            bool invFlag = false;
+
+            if (position.y < mLowerBound.y + SUPPORT_RADIUS)
+            {
+                mVelocity[i].y = std::abs(mVelocity[i].y); // Reflect velocity if particle hits lower bound
+                invFlag = true;
+            }
+            if (position.y > mUpperBound.y - SUPPORT_RADIUS)
+            {
+                mVelocity[i].y = -std::abs(mVelocity[i].y); // Reflect velocity if particle hits upper bound
+                invFlag = true;
+            }
+            if (position.x < mLowerBound.x + SUPPORT_RADIUS)
+            {
+                mVelocity[i].x = std::abs(mVelocity[i].x); // Reflect velocity if particle hits left bound
+                invFlag = true;
+            }
+            if (position.x > mUpperBound.x - SUPPORT_RADIUS)
+            {
+                mVelocity[i].x = -std::abs(mVelocity[i].x); // Reflect velocity if particle hits right bound
+                invFlag = true;
+            }
+
+            if (invFlag)
+            {
+                mPositions[i] += DELTA_T * mVelocity[i];                                        // Update position after reflection
+                mVelocity[i] = glm::clamp(mVelocity[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
+            }
+        }
+    }
+
 private:
     unsigned int AddBoundary(glm::vec2 corner, glm::vec2 size)
     {
@@ -357,6 +496,8 @@ private:
         return position.size();
     }
 
+    WCubicSpline2d mW;   // Cubic spline kernel for smoothing
+
 public:
     int mStartIndex = 0;                               // Starting index for particles
     std::vector<glm::vec2> mPositions;                 // Positions of particles
@@ -374,158 +515,6 @@ public:
     glm::vec2 mBlockSize = glm::vec2(0.5f, 0.5f);       // Size of each block
     uint32_t mBlockRowNum = 4;                          // Number of block rows
     uint32_t mBlockColNum = 4;                          // Number of block columns
-};
-
-class Solver
-{
-public:
-    explicit Solver(ParticleSystem &ps)
-        : mPs(ps), mW(SUPPORT_RADIUS) {}
-
-    ~Solver() = default;
-
-    // Perform solver iteration to update particle states
-    void Iterate()
-    {
-        UpdateDensityAndPressure();    // Update densities and pressures of particles
-        InitAcceleration();            // Initialize accelerations of particles
-        UpdateViscosityAcceleration(); // Update accelerations due to viscosity
-        UpdatePressureAcceleration();  // Update accelerations due to pressure
-        EulerIntegrate();              // Integrate positions and velocities using Euler method
-        BoundaryCondition();           // Apply boundary conditions to particles
-    }
-
-private:
-    // Update density and pressure for all particles
-    void UpdateDensityAndPressure()
-    {
-        mPs.mDensity.assign(mPs.mPositions.size(), REFERENCE_DENSITY); // Initialize densities to reference value
-        mPs.mPressure.assign(mPs.mPositions.size(), 0.0f);             // Initialize pressures to zero
-
-        for (unsigned int i = 0; i < mPs.mPositions.size(); i++)
-        {
-            if (!mPs.mNeighbors.empty())
-            {
-                float density = 0;
-                for (const auto &nInfo : mPs.mNeighbors[i])
-                {
-                    density += mW.Value(nInfo.distance); // Sum contributions from neighboring particles
-                }
-                density *= (PARTICLE_VOLUME * REFERENCE_DENSITY);       // Scale density by particle volume and reference density
-                mPs.mDensity[i] = std::max(density, REFERENCE_DENSITY); // Prevent expansion
-            }
-
-            // Update pressure using the equation of state
-            mPs.mPressure[i] = STIFFNESS_CONSTANT * (std::powf(mPs.mDensity[i] / REFERENCE_DENSITY, PRESSURE_EXPONENT) - 1.0f);
-        }
-    }
-
-    // Initialize acceleration for all particles
-    void InitAcceleration()
-    {
-        std::fill(mPs.mAcceleration.begin() + mPs.mStartIndex, mPs.mAcceleration.end(), glm::vec2(0.0f, -GRAVITY)); // Initialize accelerations to gravity
-    }
-
-    // Update viscosity acceleration for all particles
-    void UpdateViscosityAcceleration()
-    {
-        float dim = 2.0f;                                                // Dimensionality of the simulation
-        float constFactor = 2.0f * (dim + 2.0f) * VISCOSITY_COEFFICIENT; // Constant factor for viscosity calculation
-
-        for (unsigned int i = mPs.mStartIndex; i < mPs.mPositions.size(); i++)
-        {
-            if (!mPs.mNeighbors.empty())
-            {
-                glm::vec2 viscosityForce(0.0f, 0.0f);
-                for (const auto &nInfo : mPs.mNeighbors[i])
-                {
-                    int j = nInfo.index;
-                    float dotDvToRad = glm::dot(mPs.mVelocity[i] - mPs.mVelocity[j], nInfo.radius);                   // Dot product of velocity difference and radius
-                    float denom = nInfo.distance2 + 0.01f * SUPPORT_RADIUS2;                                          // Denominator for viscosity calculation
-                    viscosityForce += (PARTICLE_MASS / mPs.mDensity[j]) * dotDvToRad * mW.Grad(nInfo.radius) / denom; // Sum viscosity forces
-                }
-                viscosityForce *= constFactor;          // Scale viscosity force
-                mPs.mAcceleration[i] += viscosityForce; // Update acceleration with viscosity force
-            }
-        }
-    }
-
-    // Update pressure acceleration for all particles
-    void UpdatePressureAcceleration()
-    {
-        std::vector<float> pressDivDens2(mPs.mPositions.size(), 0);
-
-        for (unsigned int i = 0; i < mPs.mPositions.size(); i++)
-        {
-            pressDivDens2[i] = mPs.mPressure[i] / std::powf(mPs.mDensity[i], 2); // Precompute pressure divided by density squared
-        }
-
-        for (unsigned int i = mPs.mStartIndex; i < mPs.mPositions.size(); i++)
-        {
-            if (!mPs.mNeighbors.empty())
-            {
-                glm::vec2 pressureForce(0.0f, 0.0f);
-                for (const auto &nInfo : mPs.mNeighbors[i])
-                {
-                    int j = nInfo.index;
-                    pressureForce += mPs.mDensity[j] * (pressDivDens2[i] + pressDivDens2[j]) * mW.Grad(nInfo.radius); // Sum pressure forces
-                }
-                mPs.mAcceleration[i] -= pressureForce * PARTICLE_VOLUME; // Update acceleration with pressure force
-            }
-        }
-    }
-
-    // Integrate particle velocities and positions using Euler integration
-    void EulerIntegrate()
-    {
-        for (unsigned int i = mPs.mStartIndex; i < mPs.mPositions.size(); i++)
-        {
-            mPs.mVelocity[i] += DELTA_T * mPs.mAcceleration[i];                                     // Update velocity using acceleration
-            mPs.mVelocity[i] = glm::clamp(mPs.mVelocity[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
-            mPs.mPositions[i] += DELTA_T * mPs.mVelocity[i];                                        // Update position using velocity
-        }
-    }
-
-    // Apply boundary conditions to ensure particles stay within the container
-    void BoundaryCondition()
-    {
-        for (unsigned int i = 0; i < mPs.mPositions.size(); i++)
-        {
-            glm::vec2 &position = mPs.mPositions[i];
-            bool invFlag = false;
-
-            if (position.y < mPs.mLowerBound.y + SUPPORT_RADIUS)
-            {
-                mPs.mVelocity[i].y = std::abs(mPs.mVelocity[i].y); // Reflect velocity if particle hits lower bound
-                invFlag = true;
-            }
-            if (position.y > mPs.mUpperBound.y - SUPPORT_RADIUS)
-            {
-                mPs.mVelocity[i].y = -std::abs(mPs.mVelocity[i].y); // Reflect velocity if particle hits upper bound
-                invFlag = true;
-            }
-            if (position.x < mPs.mLowerBound.x + SUPPORT_RADIUS)
-            {
-                mPs.mVelocity[i].x = std::abs(mPs.mVelocity[i].x); // Reflect velocity if particle hits left bound
-                invFlag = true;
-            }
-            if (position.x > mPs.mUpperBound.x - SUPPORT_RADIUS)
-            {
-                mPs.mVelocity[i].x = -std::abs(mPs.mVelocity[i].x); // Reflect velocity if particle hits right bound
-                invFlag = true;
-            }
-
-            if (invFlag)
-            {
-                mPs.mPositions[i] += DELTA_T * mPs.mVelocity[i];                                        // Update position after reflection
-                mPs.mVelocity[i] = glm::clamp(mPs.mVelocity[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
-            }
-        }
-    }
-
-private:
-    ParticleSystem &mPs; // Reference to the particle system
-    WCubicSpline2d mW;   // Cubic spline kernel for smoothing
 };
 
 #endif // PARTICLE_SYSTEM_H
