@@ -211,7 +211,7 @@ public:
     }
 
     // Add a block of fluid particles to the system
-    int32_t AddFluidBlock(glm::vec2 corner, glm::vec2 size, glm::vec2 v0, float particleSpace)
+    unsigned int AddFluidBlock(glm::vec2 corner, glm::vec2 size, glm::vec2 v0, float particleSpace)
     {
         glm::vec2 blockLowerBound = corner;
         glm::vec2 blockUpperBound = corner + size;
@@ -236,11 +236,7 @@ public:
         {
             for (int j = 0; j < width; j++)
             {
-                position[p] = corner + glm::vec2((j + 0.5f) * particleSpace, (i + 0.5f) * particleSpace);
-                if (i % 2)
-                {
-                    position[p].x += PARTICLE_RADIUS;
-                }
+                position[p] = corner + glm::vec2((j + PCG32::randomFloat()) * particleSpace, (i + PCG32::randomFloat()) * particleSpace);
                 p++;
             }
         }
@@ -248,7 +244,7 @@ public:
         mPositions.insert(mPositions.end(), position.begin(), position.end());
         mVelocity.insert(mVelocity.end(), velocity.begin(), velocity.end());
         mAcceleration.insert(mAcceleration.end(), acceleration.begin(), acceleration.end());
-        return static_cast<int32_t>(position.size());
+        return position.size();
     }
 
     // Search for neighboring particles within the support radius
@@ -318,7 +314,7 @@ public:
     // Build the block structure for spatial partitioning
     void BuildBlockStructure()
     {
-        mBlocks = std::vector<std::vector<int>>(mBlockColNum * mBlockRowNum, std::vector<int>(0));
+        mBlocks = std::vector<std::vector<unsigned int>>(mBlockColNum * mBlockRowNum, std::vector<unsigned int>(0));
 
         for (unsigned int i = 0; i < mPositions.size(); i++)
         {
@@ -328,7 +324,7 @@ public:
     }
 
 private:
-    int32_t AddBoundary(glm::vec2 corner, glm::vec2 size)
+    unsigned int AddBoundary(glm::vec2 corner, glm::vec2 size)
     {
         float space = PARTICLE_RADIUS / 4.0f;
         int rows = static_cast<int>(floor(size.y / space));
@@ -356,7 +352,7 @@ private:
         mPositions.insert(mPositions.end(), position.begin(), position.end());
         mVelocity.insert(mVelocity.end(), velocity.begin(), velocity.end());
         mAcceleration.insert(mAcceleration.end(), acceleration.begin(), acceleration.end());
-        return static_cast<int32_t>(position.size());
+        return position.size();
     }
 
 public:
@@ -372,7 +368,7 @@ public:
     glm::vec2 mLowerBound = glm::vec2(-1.0f, -1.0f);
     glm::vec2 mUpperBound = glm::vec2(1.0f, 1.0f);
     glm::vec2 mContainerCenter = glm::vec2(0.0f, 0.0f);
-    std::vector<std::vector<int>> mBlocks;
+    std::vector<std::vector<unsigned int>> mBlocks;
     glm::vec2 mBlockSize = glm::vec2(0.5f, 0.5f);
     uint32_t mBlockRowNum = 4;
     uint32_t mBlockColNum = 4;
