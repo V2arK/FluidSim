@@ -7,6 +7,10 @@
 #include <unordered_map>
 #include <stdint.h>
 
+/* ----------------- Multi thread Constants -------------------- */
+
+const unsigned int THREAD_COUNT = 8;
+
 /* ----------------- Physical Constants -------------------- */
 
 const float REFERENCE_DENSITY = 1000.0f;   // Reference density for fluid
@@ -59,12 +63,12 @@ inline unsigned int computeHash(unsigned int x = 0, unsigned int y = 0, unsigned
 
 /* ----------------- Cubic Spline Kernel -------------------- */
 
-class CubicSplineKernel2D
+class CubicSplineKernel
 {
 public:
-    CubicSplineKernel2D() = delete;
+    CubicSplineKernel() = delete;
 
-    explicit CubicSplineKernel2D(float smoothingRadius)
+    explicit CubicSplineKernel(float smoothingRadius)
         : smoothingRadius_(smoothingRadius),
           smoothingRadiusSquared_(smoothingRadius * smoothingRadius),
           normalizationConstant_(40.0 / (7.0 * glm::pi<float>() * smoothingRadiusSquared_)),
@@ -90,7 +94,7 @@ public:
         }
     }
 
-    ~CubicSplineKernel2D() = default;
+    ~CubicSplineKernel() = default;
 
     float Value(float distance) const
     {
@@ -203,8 +207,6 @@ public:
         particlePositions_.clear();
         particleVelocities_.clear();
         particleAccelerations_.clear();
-
-        startIndex_ = 0;
     }
 
     unsigned int AddFluidBlock(glm::vec2 corner, glm::vec2 size, glm::vec2 initialVelocity, float particleSpacing)
@@ -245,11 +247,17 @@ public:
 
     void SearchNeighbors()
     {
-        BuildBlockStructure();
+        blocks_ = std::vector<std::vector<unsigned int>>(blockColumnCount_ * blockRowCount_, std::vector<unsigned int>(0));
+
+        for (unsigned int i = 0; i < particlePositions_.size(); i++)
+        {
+            int blockId = GetBlockIdByPosition(particlePositions_[i]);
+            blocks_[blockId].push_back(static_cast<int>(i));
+        }
 
         neighbors_ = std::vector<std::vector<NeighborInfo>>(particlePositions_.size(), std::vector<NeighborInfo>(0));
 
-        for (unsigned int i = startIndex_; i < particlePositions_.size(); i++)
+        for (unsigned int i = 0; i < particlePositions_.size(); i++)
         {
             glm::vec2 deltaPosition = particlePositions_[i] - lowerBound_;
             uint32_t blockColumn = static_cast<uint32_t>(floor(deltaPosition.x / blockSize_.x));
@@ -305,17 +313,6 @@ public:
         return y * blockColumnCount_ + x;
     }
 
-    void BuildBlockStructure()
-    {
-        blocks_ = std::vector<std::vector<unsigned int>>(blockColumnCount_ * blockRowCount_, std::vector<unsigned int>(0));
-
-        for (unsigned int i = 0; i < particlePositions_.size(); i++)
-        {
-            int blockId = GetBlockIdByPosition(particlePositions_[i]);
-            blocks_[blockId].push_back(static_cast<int>(i));
-        }
-    }
-
     /* ----------------- SPH Implementation -------------------- */
 
     void Iterate()
@@ -353,7 +350,7 @@ public:
 
     void InitAcceleration()
     {
-        std::fill(particleAccelerations_.begin() + startIndex_, particleAccelerations_.end(), glm::vec2(0.0f, -GRAVITY)); // Initialize accelerations to gravity
+        std::fill(particleAccelerations_.begin() + 0, particleAccelerations_.end(), glm::vec2(0.0f, -GRAVITY)); // Initialize accelerations to gravity
     }
 
     void UpdateViscosityAcceleration()
@@ -361,7 +358,7 @@ public:
         float dimension = 2.0f;                                                    // Dimensionality of the simulation
         float viscosityFactor = 2.0f * (dimension + 2.0f) * VISCOSITY_COEFFICIENT; // Constant factor for viscosity calculation
 
-        for (unsigned int i = startIndex_; i < particlePositions_.size(); i++)
+        for (unsigned int i = 0; i < particlePositions_.size(); i++)
         {
             if (!neighbors_.empty())
             {
@@ -388,7 +385,7 @@ public:
             pressureOverDensitySquared[i] = particlePressures_[i] / std::powf(particleDensities_[i], 2); // Precompute pressure divided by density squared
         }
 
-        for (unsigned int i = startIndex_; i < particlePositions_.size(); i++)
+        for (unsigned int i = 0; i < particlePositions_.size(); i++)
         {
             if (!neighbors_.empty())
             {
@@ -405,7 +402,7 @@ public:
 
     void EulerIntegrate()
     {
-        for (unsigned int i = startIndex_; i < particlePositions_.size(); i++)
+        for (unsigned int i = 0; i < particlePositions_.size(); i++)
         {
             particleVelocities_[i] += TIME_STEP * particleAccelerations_[i];                                    // Update velocity using acceleration
             particleVelocities_[i] = glm::clamp(particleVelocities_[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
@@ -481,10 +478,9 @@ private:
         return positions.size();
     }
 
-    CubicSplineKernel2D kernel_; // Cubic spline kernel for smoothing
+    CubicSplineKernel kernel_; // Cubic spline kernel for smoothing
 
 public:
-    int startIndex_ = 0;                               // Starting index for particles
     std::vector<glm::vec2> particlePositions_;         // Positions of particles
     std::vector<glm::vec2> particleAccelerations_;     // Accelerations of particles
     std::vector<glm::vec2> particleVelocities_;        // Velocities of particles
