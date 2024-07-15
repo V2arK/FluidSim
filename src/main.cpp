@@ -17,7 +17,7 @@
 #include "pbd.h"
 
 // Camera parameters for setting up the view matrix
-glm::vec3 cameraPos = glm::vec3(0.2f, 0.2f, 1.5f);	  // Camera position
+glm::vec3 cameraPos = glm::vec3(-0.2f, -0.2f, 2.0f);  // Camera position
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f); // Camera direction
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);	  // Camera up vector
 float yaw = -90.0f;									  // Initial yaw angle
@@ -112,7 +112,6 @@ static void framebufferSizeCallback(GLFWwindow *window, int w, int h)
 	glViewport(0, 0, w, h); // Update the OpenGL viewport to match the new window size
 }
 
-
 /* ----------------- Initializer -------------------- */
 
 // Function to initialize GLFW and create a window with specified dimensions and title
@@ -157,7 +156,7 @@ GLFWwindow *initialize(int width, int height, const std::string &title)
 	// Set GLFW callback functions for input handling
 	glfwSetKeyCallback(window, keyCallback);
 	glfwSetMouseButtonCallback(window, mouseButtonCallback);
-	//glfwSetCursorPosCallback(window, mousePositionCallback);
+	// glfwSetCursorPosCallback(window, mousePositionCallback);
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
 	// Set the clear color for the window
@@ -167,7 +166,7 @@ GLFWwindow *initialize(int width, int height, const std::string &title)
 	glEnable(GL_DEPTH_TEST);
 
 	// Hide the mouse cursor and capture it within the window
-	//glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	// glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	return window;
 }
@@ -385,10 +384,10 @@ int main()
 	GLuint vao = createBuffersForSphere(PARTICLE_RADIUS, sectorCount, stackCount);
 
 	// setup particle system
-	ParticalSystem ps;
-    ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(2.0, 2.0));
-    ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.4, 0.4), glm::vec2(-2.0f, -10.0f), 0.01f * 0.7f);
-    std::cout << "partical num = " << ps.mPositions.size() << std::endl;
+	ParticleSystem ps;
+	ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(2.0, 2.0));
+	ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.4, 0.4), glm::vec2(-2.0f, -10.0f), 0.01f * 0.7f);
+	std::cout << "partical num = " << ps.mPositions.size() << std::endl;
 
 	Solver sv(ps);
 
@@ -404,11 +403,9 @@ int main()
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		// update particles
-		for (int i = 0; i < Para::substep; i++) {    // ���
-            ps.SearchNeighbors();
-            sv.Iterate();
-        }
-		
+		ps.SearchNeighbors();
+		sv.Iterate();
+
 		// Render the spheres
 		render(shaderProgram, vao, ps.mPositions);
 
