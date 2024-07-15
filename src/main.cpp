@@ -386,8 +386,8 @@ int main()
 	// setup particle system
 	ParticleSystem ps;
 	ps.setContainerSize(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.6, 0.6, 0.6));
-	ps.addFluidBlock(glm::vec3(0.05, 0.35, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
-	ps.addFluidBlock(glm::vec3(0.35, 0.05, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
+	//ps.addFluidBlock(glm::vec3(0.05, 0.35, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
+	//ps.addFluidBlock(glm::vec3(0.35, 0.05, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
 	ps.addFluidBlock(glm::vec3(0.35, 0.35, 0.05), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
 	ps.updateData();
 	std::cout << "partical num = " << ps.particles.size() << std::endl;
