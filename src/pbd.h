@@ -10,7 +10,7 @@
 
 /* ----------------- Multi thread Constants -------------------- */
 
-const unsigned int THREAD_COUNT = 8;
+const unsigned int THREAD_COUNT = std::thread::hardware_concurrency();
 
 /* ----------------- Physical Constants -------------------- */
 
@@ -199,7 +199,6 @@ public:
     {
         lowerBound_ = corner;
         upperBound_ = corner + size;
-        containerCenter_ = corner + 0.5f * size;
 
         blockRowCount_ = static_cast<uint32_t>(floor(size.y / SUPPORT_RADIUS));
         blockColumnCount_ = static_cast<uint32_t>(floor(size.x / SUPPORT_RADIUS));
@@ -258,7 +257,6 @@ public:
 
         neighbors_ = std::vector<std::vector<NeighborInfo>>(particlePositions_.size(), std::vector<NeighborInfo>(0));
 
-        const unsigned int numThreads = std::thread::hardware_concurrency();
         std::vector<std::thread> threads;
 
         auto worker = [this](unsigned int start, unsigned int end)
@@ -303,12 +301,12 @@ public:
             }
         };
 
-        const unsigned int particlesPerThread = particlePositions_.size() / numThreads;
+        const unsigned int particlesPerThread = particlePositions_.size() / THREAD_COUNT;
         unsigned int start = 0;
 
-        for (unsigned int t = 0; t < numThreads; t++)
+        for (unsigned int t = 0; t < THREAD_COUNT; t++)
         {
-            unsigned int end = (t == numThreads - 1) ? particlePositions_.size() : start + particlesPerThread;
+            unsigned int end = (t == THREAD_COUNT - 1) ? particlePositions_.size() : start + particlesPerThread;
             threads.emplace_back(worker, start, end);
             start = end;
         }
@@ -356,20 +354,43 @@ public:
         particleDensities_.assign(particlePositions_.size(), REFERENCE_DENSITY); // Initialize densities to reference value
         particlePressures_.assign(particlePositions_.size(), 0.0f);              // Initialize pressures to zero
 
-        for (unsigned int i = 0; i < particlePositions_.size(); i++)
-        {
-            if (!neighbors_.empty())
-            {
-                float density = 0;
-                for (const auto &neighborInfo : neighbors_[i])
-                {
-                    density += kernel_.Value(neighborInfo.distance); // Sum contributions from neighboring particles
-                }
-                density *= (PARTICLE_VOLUME * REFERENCE_DENSITY);             // Scale density by particle volume and reference density
-                particleDensities_[i] = std::max(density, REFERENCE_DENSITY); // Prevent expansion
-            }
+        std::vector<std::thread> threads;
 
-            particlePressures_[i] = STIFFNESS_CONSTANT * (std::powf(particleDensities_[i] / REFERENCE_DENSITY, PRESSURE_EXPONENT) - 1.0f);
+        auto worker = [this](unsigned int start, unsigned int end)
+        {
+            for (unsigned int i = start; i < end; i++)
+            {
+                if (!neighbors_.empty())
+                {
+                    float density = 0;
+                    for (const auto &neighborInfo : neighbors_[i])
+                    {
+                        density += kernel_.Value(neighborInfo.distance); // Sum contributions from neighboring particles
+                    }
+                    density *= (PARTICLE_VOLUME * REFERENCE_DENSITY);             // Scale density by particle volume and reference density
+                    particleDensities_[i] = std::max(density, REFERENCE_DENSITY); // Prevent expansion
+                }
+
+                particlePressures_[i] = STIFFNESS_CONSTANT * (std::powf(particleDensities_[i] / REFERENCE_DENSITY, PRESSURE_EXPONENT) - 1.0f);
+            }
+        };
+
+        const unsigned int particlesPerThread = particlePositions_.size() / THREAD_COUNT;
+        unsigned int start = 0;
+
+        for (unsigned int t = 0; t < THREAD_COUNT; t++)
+        {
+            unsigned int end = (t == THREAD_COUNT - 1) ? particlePositions_.size() : start + particlesPerThread;
+            threads.emplace_back(worker, start, end);
+            start = end;
+        }
+
+        for (auto &thread : threads)
+        {
+            if (thread.joinable())
+            {
+                thread.join();
+            }
         }
     }
 
@@ -381,22 +402,44 @@ public:
     void UpdateViscosityAcceleration()
     {
         float dimension = 2.0f;                                                    // Dimensionality of the simulation
-        float viscosityFactor = 2.0f * (dimension + 2.0f) * VISCOSITY_COEFFICIENT; // Constant factor for viscosity calculation
+        float viscosityFactor = 2.0f * (dimension + 2.0f) * VISCOSITY_COEFFICIENT; // Constant factor for viscosity 
+        std::vector<std::thread> threads;
 
-        for (unsigned int i = 0; i < particlePositions_.size(); i++)
+        auto worker = [this, viscosityFactor](unsigned int start, unsigned int end)
         {
-            if (!neighbors_.empty())
+            for (unsigned int i = start; i < end; i++)
             {
-                glm::vec2 viscosityForce(0.0f, 0.0f);
-                for (const auto &neighborInfo : neighbors_[i])
+                if (!neighbors_.empty())
                 {
-                    int j = neighborInfo.particleIndex;
-                    float velocityDifferenceDotRadius = glm::dot(particleVelocities_[i] - particleVelocities_[j], neighborInfo.radiusVector);                            // Dot product of velocity difference and radius
-                    float denominator = neighborInfo.distanceSquared + 0.01f * SUPPORT_RADIUS_SQUARED;                                                                   // Denominator for viscosity calculation
-                    viscosityForce += (PARTICLE_MASS / particleDensities_[j]) * velocityDifferenceDotRadius * kernel_.Gradient(neighborInfo.radiusVector) / denominator; // Sum viscosity forces
+                    glm::vec2 viscosityForce(0.0f, 0.0f);
+                    for (const auto &neighborInfo : neighbors_[i])
+                    {
+                        int j = neighborInfo.particleIndex;
+                        float velocityDifferenceDotRadius = glm::dot(particleVelocities_[i] - particleVelocities_[j], neighborInfo.radiusVector);                            // Dot product of velocity difference and radius
+                        float denominator = neighborInfo.distanceSquared + 0.01f * SUPPORT_RADIUS_SQUARED;                                                                   // Denominator for viscosity calculation
+                        viscosityForce += (PARTICLE_MASS / particleDensities_[j]) * velocityDifferenceDotRadius * kernel_.Gradient(neighborInfo.radiusVector) / denominator; // Sum viscosity forces
+                    }
+                    viscosityForce *= viscosityFactor;           // Scale viscosity force
+                    particleAccelerations_[i] += viscosityForce; // Update acceleration with viscosity force
                 }
-                viscosityForce *= viscosityFactor;           // Scale viscosity force
-                particleAccelerations_[i] += viscosityForce; // Update acceleration with viscosity force
+            }
+        };
+
+        const unsigned int particlesPerThread = particlePositions_.size() / THREAD_COUNT;
+        unsigned int start = 0;
+
+        for (unsigned int t = 0; t < THREAD_COUNT; t++)
+        {
+            unsigned int end = (t == THREAD_COUNT - 1) ? particlePositions_.size() : start + particlesPerThread;
+            threads.emplace_back(worker, start, end);
+            start = end;
+        }
+
+        for (auto &thread : threads)
+        {
+            if (thread.joinable())
+            {
+                thread.join();
             }
         }
     }
@@ -405,68 +448,160 @@ public:
     {
         std::vector<float> pressureOverDensitySquared(particlePositions_.size(), 0);
 
-        for (unsigned int i = 0; i < particlePositions_.size(); i++)
+        std::vector<std::thread> threads;
+
+        auto worker1 = [this, &pressureOverDensitySquared](unsigned int start, unsigned int end)
         {
-            pressureOverDensitySquared[i] = particlePressures_[i] / std::powf(particleDensities_[i], 2); // Precompute pressure divided by density squared
+            for (unsigned int i = start; i < end; i++)
+            {
+                pressureOverDensitySquared[i] = particlePressures_[i] / std::powf(particleDensities_[i], 2); // Precompute pressure divided by density squared
+            }
+        };
+
+        const unsigned int particlesPerThread = particlePositions_.size() / THREAD_COUNT;
+        unsigned int start = 0;
+
+        for (unsigned int t = 0; t < THREAD_COUNT; t++)
+        {
+            unsigned int end = (t == THREAD_COUNT - 1) ? particlePositions_.size() : start + particlesPerThread;
+            threads.emplace_back(worker1, start, end);
+            start = end;
         }
 
-        for (unsigned int i = 0; i < particlePositions_.size(); i++)
+        for (auto &thread : threads)
         {
-            if (!neighbors_.empty())
+            if (thread.joinable())
             {
-                glm::vec2 pressureForce(0.0f, 0.0f);
-                for (const auto &neighborInfo : neighbors_[i])
+                thread.join();
+            }
+        }
+
+        auto worker2 = [this, &pressureOverDensitySquared](unsigned int start, unsigned int end)
+        {
+            for (unsigned int i = start; i < end; i++)
+            {
+                if (!neighbors_.empty())
                 {
-                    int j = neighborInfo.particleIndex;
-                    pressureForce += particleDensities_[j] * (pressureOverDensitySquared[i] + pressureOverDensitySquared[j]) * kernel_.Gradient(neighborInfo.radiusVector); // Sum pressure forces
+                    glm::vec2 pressureForce(0.0f, 0.0f);
+                    for (const auto &neighborInfo : neighbors_[i])
+                    {
+                        int j = neighborInfo.particleIndex;
+                        pressureForce += particleDensities_[j] * (pressureOverDensitySquared[i] + pressureOverDensitySquared[j]) * kernel_.Gradient(neighborInfo.radiusVector); // Sum pressure forces
+                    }
+                    particleAccelerations_[i] -= pressureForce * PARTICLE_VOLUME; // Update acceleration with pressure force
                 }
-                particleAccelerations_[i] -= pressureForce * PARTICLE_VOLUME; // Update acceleration with pressure force
+            }
+        };
+
+        start = 0;
+        threads.clear();
+
+        for (unsigned int t = 0; t < THREAD_COUNT; t++)
+        {
+            unsigned int end = (t == THREAD_COUNT - 1) ? particlePositions_.size() : start + particlesPerThread;
+            threads.emplace_back(worker2, start, end);
+            start = end;
+        }
+
+        for (auto &thread : threads)
+        {
+            if (thread.joinable())
+            {
+                thread.join();
             }
         }
     }
 
     void EulerIntegrate()
     {
-        for (unsigned int i = 0; i < particlePositions_.size(); i++)
+        
+    std::vector<std::thread> threads;
+
+    auto worker = [this](unsigned int start, unsigned int end)
+    {
+        for (unsigned int i = start; i < end; i++)
         {
             particleVelocities_[i] += TIME_STEP * particleAccelerations_[i];                                    // Update velocity using acceleration
             particleVelocities_[i] = glm::clamp(particleVelocities_[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
             particlePositions_[i] += TIME_STEP * particleVelocities_[i];                                        // Update position using velocity
         }
+    };
+
+    const unsigned int particlesPerThread = particlePositions_.size() / THREAD_COUNT;
+    unsigned int start = 0;
+
+    for (unsigned int t = 0; t < THREAD_COUNT; t++)
+    {
+        unsigned int end = (t == THREAD_COUNT - 1) ? particlePositions_.size() : start + particlesPerThread;
+        threads.emplace_back(worker, start, end);
+        start = end;
+    }
+
+    for (auto &thread : threads)
+    {
+        if (thread.joinable())
+        {
+            thread.join();
+        }
+    }
     }
 
     void ApplyBoundaryConditions()
     {
-        for (unsigned int i = 0; i < particlePositions_.size(); i++)
+        
+        std::vector<std::thread> threads;
+
+        auto worker = [this](unsigned int start, unsigned int end)
         {
-            glm::vec2 &position = particlePositions_[i];
-            bool inversionFlag = false;
+            for (unsigned int i = start; i < end; i++)
+            {
+                glm::vec2 &position = particlePositions_[i];
+                bool inversionFlag = false;
 
-            if (position.y < lowerBound_.y + SUPPORT_RADIUS)
-            {
-                particleVelocities_[i].y = std::abs(particleVelocities_[i].y); // Reflect velocity if particle hits lower bound
-                inversionFlag = true;
-            }
-            if (position.y > upperBound_.y - SUPPORT_RADIUS)
-            {
-                particleVelocities_[i].y = -std::abs(particleVelocities_[i].y); // Reflect velocity if particle hits upper bound
-                inversionFlag = true;
-            }
-            if (position.x < lowerBound_.x + SUPPORT_RADIUS)
-            {
-                particleVelocities_[i].x = std::abs(particleVelocities_[i].x); // Reflect velocity if particle hits left bound
-                inversionFlag = true;
-            }
-            if (position.x > upperBound_.x - SUPPORT_RADIUS)
-            {
-                particleVelocities_[i].x = -std::abs(particleVelocities_[i].x); // Reflect velocity if particle hits right bound
-                inversionFlag = true;
-            }
+                if (position.y < lowerBound_.y + SUPPORT_RADIUS)
+                {
+                    particleVelocities_[i].y = std::abs(particleVelocities_[i].y); // Reflect velocity if particle hits lower bound
+                    inversionFlag = true;
+                }
+                if (position.y > upperBound_.y - SUPPORT_RADIUS)
+                {
+                    particleVelocities_[i].y = -std::abs(particleVelocities_[i].y); // Reflect velocity if particle hits upper bound
+                    inversionFlag = true;
+                }
+                if (position.x < lowerBound_.x + SUPPORT_RADIUS)
+                {
+                    particleVelocities_[i].x = std::abs(particleVelocities_[i].x); // Reflect velocity if particle hits left bound
+                    inversionFlag = true;
+                }
+                if (position.x > upperBound_.x - SUPPORT_RADIUS)
+                {
+                    particleVelocities_[i].x = -std::abs(particleVelocities_[i].x); // Reflect velocity if particle hits right bound
+                    inversionFlag = true;
+                }
 
-            if (inversionFlag)
+                if (inversionFlag)
+                {
+                    particlePositions_[i] += TIME_STEP * particleVelocities_[i];                                        // Update position after reflection
+                    particleVelocities_[i] = glm::clamp(particleVelocities_[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
+                }
+            }
+        };
+
+        const unsigned int particlesPerThread = particlePositions_.size() / THREAD_COUNT;
+        unsigned int start = 0;
+
+        for (unsigned int t = 0; t < THREAD_COUNT; t++)
+        {
+            unsigned int end = (t == THREAD_COUNT - 1) ? particlePositions_.size() : start + particlesPerThread;
+            threads.emplace_back(worker, start, end);
+            start = end;
+        }
+
+        for (auto &thread : threads)
+        {
+            if (thread.joinable())
             {
-                particlePositions_[i] += TIME_STEP * particleVelocities_[i];                                        // Update position after reflection
-                particleVelocities_[i] = glm::clamp(particleVelocities_[i], glm::vec2(-100.0f), glm::vec2(100.0f)); // Clamp velocity to maximum allowable value
+                thread.join();
             }
         }
     }
@@ -513,9 +648,8 @@ public:
     std::vector<float> particlePressures_;             // Pressures of particles
     std::vector<std::vector<NeighborInfo>> neighbors_; // Neighbor information for particles
 
-    glm::vec2 lowerBound_ = glm::vec2(-1.0f, -1.0f);    // Lower bound of the container
-    glm::vec2 upperBound_ = glm::vec2(1.0f, 1.0f);      // Upper bound of the container
-    glm::vec2 containerCenter_ = glm::vec2(0.0f, 0.0f); // Center of the container
+    glm::vec2 lowerBound_ = glm::vec2(-1.0f, -0.5f);    // Lower bound of the container
+    glm::vec2 upperBound_ = glm::vec2(1.0f, 0.5f);      // Upper bound of the container
     std::vector<std::vector<unsigned int>> blocks_;     // Blocks for spatial partitioning
     glm::vec2 blockSize_ = glm::vec2(0.5f, 0.5f);       // Size of each block
     uint32_t blockRowCount_ = 4;                        // Number of block rows

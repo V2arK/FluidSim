@@ -17,7 +17,7 @@
 #include "pbd.h"
 
 // Camera parameters for setting up the view matrix
-glm::vec3 cameraPos = glm::vec3(-0.2f, -0.2f, 2.0f);  // Camera position
+glm::vec3 cameraPos = glm::vec3(0.0f, -0.2f, 2.0f);  // Camera position
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f); // Camera direction
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);	  // Camera up vector
 float yaw = -90.0f;									  // Initial yaw angle
@@ -385,7 +385,7 @@ int main()
 
 	// setup particle system
 	ParticleSystem ps;
-	ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(2.0, 2.0));
+	ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(2.0, 1.5));
 	ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.4, 0.4), glm::vec2(-2.0f, -10.0f), 0.01f * 0.7f);
 	std::cout << "partical num = " << ps.particlePositions_.size() << std::endl;
 
