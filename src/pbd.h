@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <stdint.h>
+#include <thread>
 
 /* ----------------- Multi thread Constants -------------------- */
 
@@ -257,42 +258,66 @@ public:
 
         neighbors_ = std::vector<std::vector<NeighborInfo>>(particlePositions_.size(), std::vector<NeighborInfo>(0));
 
-        for (unsigned int i = 0; i < particlePositions_.size(); i++)
+        const unsigned int numThreads = std::thread::hardware_concurrency();
+        std::vector<std::thread> threads;
+
+        auto worker = [this](unsigned int start, unsigned int end)
         {
-            glm::vec2 deltaPosition = particlePositions_[i] - lowerBound_;
-            uint32_t blockColumn = static_cast<uint32_t>(floor(deltaPosition.x / blockSize_.x));
-            uint32_t blockRow = static_cast<uint32_t>(floor(deltaPosition.y / blockSize_.y));
-
-            int blockId = GetBlockIdByPosition(particlePositions_[i]);
-
-            for (int rowOffset = -1; rowOffset <= 1; rowOffset++)
+            for (unsigned int i = start; i < end; i++)
             {
-                for (int columnOffset = -1; columnOffset <= 1; columnOffset++)
+                glm::vec2 deltaPosition = particlePositions_[i] - lowerBound_;
+                uint32_t blockColumn = static_cast<uint32_t>(floor(deltaPosition.x / blockSize_.x));
+                uint32_t blockRow = static_cast<uint32_t>(floor(deltaPosition.y / blockSize_.y));
+
+                int blockId = GetBlockIdByPosition(particlePositions_[i]);
+
+                for (int rowOffset = -1; rowOffset <= 1; rowOffset++)
                 {
-                    if (blockColumn + columnOffset < 0 || blockColumn + columnOffset >= blockColumnCount_ ||
-                        blockRow + rowOffset < 0 || blockRow + rowOffset >= blockRowCount_)
+                    for (int columnOffset = -1; columnOffset <= 1; columnOffset++)
                     {
-                        continue;
-                    }
-
-                    int neighborBlockId = blockId + rowOffset * blockColumnCount_ + columnOffset;
-                    auto &block = blocks_[neighborBlockId];
-                    for (int j : block)
-                    {
-                        if (i == j)
-                            continue;
-
-                        NeighborInfo neighborInfo{};
-                        neighborInfo.radiusVector = particlePositions_[i] - particlePositions_[j];
-                        neighborInfo.distance = glm::length(neighborInfo.radiusVector);
-                        neighborInfo.distanceSquared = neighborInfo.distance * neighborInfo.distance;
-                        neighborInfo.particleIndex = j;
-                        if (neighborInfo.distance <= SUPPORT_RADIUS)
+                        if (blockColumn + columnOffset < 0 || blockColumn + columnOffset >= blockColumnCount_ ||
+                            blockRow + rowOffset < 0 || blockRow + rowOffset >= blockRowCount_)
                         {
-                            neighbors_[i].push_back(neighborInfo);
+                            continue;
+                        }
+
+                        int neighborBlockId = blockId + rowOffset * blockColumnCount_ + columnOffset;
+                        auto &block = blocks_[neighborBlockId];
+                        for (int j : block)
+                        {
+                            if (i == j)
+                                continue;
+
+                            NeighborInfo neighborInfo{};
+                            neighborInfo.radiusVector = particlePositions_[i] - particlePositions_[j];
+                            neighborInfo.distance = glm::length(neighborInfo.radiusVector);
+                            neighborInfo.distanceSquared = neighborInfo.distance * neighborInfo.distance;
+                            neighborInfo.particleIndex = j;
+                            if (neighborInfo.distance <= SUPPORT_RADIUS)
+                            {
+                                neighbors_[i].push_back(neighborInfo);
+                            }
                         }
                     }
                 }
+            }
+        };
+
+        const unsigned int particlesPerThread = particlePositions_.size() / numThreads;
+        unsigned int start = 0;
+
+        for (unsigned int t = 0; t < numThreads; t++)
+        {
+            unsigned int end = (t == numThreads - 1) ? particlePositions_.size() : start + particlesPerThread;
+            threads.emplace_back(worker, start, end);
+            start = end;
+        }
+
+        for (auto &thread : threads)
+        {
+            if (thread.joinable())
+            {
+                thread.join();
             }
         }
     }
