@@ -326,7 +326,7 @@ GLuint createShaderProgram(const std::string &vertexShaderPath, const std::strin
 }
 
 // Function to render the spheres
-void render(GLuint shaderProgram, GLuint vao, const std::vector<ParticleInfo> &particles)
+void render(GLuint shaderProgram, GLuint vao, const std::vector<glm::vec2> &particles)
 {
 	glUseProgram(shaderProgram); // Use the shader program
 
@@ -348,12 +348,13 @@ void render(GLuint shaderProgram, GLuint vao, const std::vector<ParticleInfo> &p
 	// Loop through each sphere position and render the sphere
 	for (const auto &p : particles)
 	{
+		glm::vec3 pos(p, 0.0f);
 		glm::mat4 model = glm::mat4(1.0f); // Create the model matrix
 		GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
 		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model)); // Pass the model matrix to the shader
 
 		GLint spherePosLoc = glGetUniformLocation(shaderProgram, "spherePosition");
-		glUniform3fv(spherePosLoc, 1, glm::value_ptr(p.position)); // Pass the sphere position to the shader
+		glUniform3fv(spherePosLoc, 1, glm::value_ptr(pos)); // Pass the sphere position to the shader
 
 		glDrawElements(GL_TRIANGLES, sphereIndices.size(), GL_UNSIGNED_INT, 0); // Draw the sphere using the index buffer
 	}
@@ -384,13 +385,12 @@ int main()
 	GLuint vao = createBuffersForSphere(PARTICLE_RADIUS, sectorCount, stackCount);
 
 	// setup particle system
-	ParticleSystem ps;
-	ps.setContainerSize(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.6, 0.6, 0.6));
-	//ps.addFluidBlock(glm::vec3(0.05, 0.35, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
-	//ps.addFluidBlock(glm::vec3(0.35, 0.05, 0.35), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
-	ps.addFluidBlock(glm::vec3(0.35, 0.35, 0.05), glm::vec3(0.1, 0.1, 0.2), glm::vec3(0.0, 0.0, 0.0), 0.01);
-	ps.updateData();
-	std::cout << "partical num = " << ps.particles.size() << std::endl;
+	ParticalSystem ps;
+    ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(2.0, 2.0));
+    ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.4, 0.4), glm::vec2(-2.0f, -10.0f), 0.01f * 0.7f);
+    std::cout << "partical num = " << ps.mPositions.size() << std::endl;
+
+	Solver sv(ps);
 
 	// Main render loop
 	while (!glfwWindowShouldClose(window))
@@ -404,10 +404,13 @@ int main()
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		// update particles
-		ps.updateData();
+		for (int i = 0; i < Para::substep; i++) {    // ���
+            ps.SearchNeighbors();
+            sv.Iterate();
+        }
 		
 		// Render the spheres
-		render(shaderProgram, vao, ps.particles);
+		render(shaderProgram, vao, ps.mPositions);
 
 		// Swap the front and back buffers
 		glfwSwapBuffers(window);

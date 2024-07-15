@@ -21,6 +21,16 @@ const float DELTA_T = 0.003f;              // delta for euler intergration
 const float MAX_VELOCITY = 100.0f;         // max velocity of particle
 const float VELOCITY_ATTENUATION = 0.9f;   // for when bouncing off the border
 
+namespace Para
+{
+    const float gravity = 9.8f;
+    const float density0 = 1000.0f;
+    const float stiffness = 50.0f;
+    const float exponent = 7.0f;
+    const float viscosity = 0.05f;
+    const float dt = 2e-4;
+    const int substep = 10;
+}
 /* ----------------- Random Generator -------------------- */
 
 #include <stdint.h>
@@ -58,406 +68,473 @@ inline unsigned int computeHash(unsigned int x, unsigned int y, unsigned int z)
 
 /* ----------------- Cubic Spline Kernel -------------------- */
 
-class CubicSplineKernel
+class WCubicSpline2d
 {
 public:
-    CubicSplineKernel() = delete; // Delete default constructor
+    WCubicSpline2d() = delete;
 
-    // Constructor with support radius parameter
-    explicit CubicSplineKernel(float h)
+    explicit WCubicSpline2d(float h)
     {
-        supportRadius = h;
-        supportRadiusSquared = h * h;
-        supportRadiusCubed = supportRadiusSquared * h;
-        normalizationFactor = 8.0 / (glm::pi<float>() * supportRadiusCubed);
+        mH = h;
+        mH2 = h * h;
+        mSigma = 40.0 / (7.0 * glm::pi<float>() * mH2);
 
-        bufferSize = 128;
-        valueAndGradientBuffer = std::vector<glm::vec2>(bufferSize);
+        mBufferSize = glm::uvec2(128, 128);
+        mGradBuffer = std::vector<std::vector<glm::vec2>>(mBufferSize.x, std::vector<glm::vec2>(mBufferSize.y));
+        mValueBuffer = std::vector<float>(mBufferSize.x);
 
-        // Precompute values and gradient factors
-        for (uint32_t i = 0; i < bufferSize; i++)
+        for (int i = 0; i < mBufferSize.x; i++)
         {
-            float distance = ((float)i + 0.5f) * supportRadius / bufferSize; // [0, h]
-            valueAndGradientBuffer[i].x = calculateValue(distance);
-            valueAndGradientBuffer[i].y = calculateGradientFactor(distance);
+            for (int j = 0; j < mBufferSize.y; j++)
+            {
+                float x = ((float)i + 0.5f) * mH / mBufferSize.x;
+                float y = ((float)j + 0.5f) * mH / mBufferSize.y;
+                glm::vec2 radius(x, y);
+                mGradBuffer[i][j] = CalculateGrad(radius);
+            }
+        }
+
+        for (int i = 0; i < mBufferSize.x; i++)
+        {
+            float distance = ((float)i + 0.5f) * mH / mBufferSize.x;
+            mValueBuffer[i] = CalculateValue(distance);
         }
     }
-    ~CubicSplineKernel() {}
-
-    // Get precomputed value and gradient based on input distance
-    glm::vec2 getValue(float distance)
+    ~WCubicSpline2d()
     {
-        if (distance < 0.0f || distance > supportRadius)
-        {
-            return glm::vec2(0.0f, 0.0f);
-        }
-
-        float index = distance / supportRadius * bufferSize;
-        uint32_t lowerIndex = static_cast<uint32_t>(index);
-        uint32_t upperIndex = lowerIndex + 1;
-
-        if (upperIndex >= bufferSize)
-        {
-            upperIndex = bufferSize - 1;
-        }
-
-        float t = index - lowerIndex;
-        glm::vec2 lowerValue = valueAndGradientBuffer[lowerIndex];
-        glm::vec2 upperValue = valueAndGradientBuffer[upperIndex];
-
-        return glm::mix(lowerValue, upperValue, t);
     }
 
-    // Get size of the buffer
-    uint32_t getBufferSize() { return bufferSize; }
-
-    // Calculate spline value for a given distance
-    float calculateValue(float distance)
+    float Value(float distance)
     {
+        float res = 0;
+        int i = (std::abs(distance) * mBufferSize.x / mH);
+        if (i >= mBufferSize.x)
+        {
+            return res;
+        }
+        res = mValueBuffer[i];
+        return res;
+    }
+
+    glm::vec2 Grad(glm::vec2 radius) {
+        glm::vec2 res(0.0f, 0.0f);
+
+        int i = (std::abs(radius.x) * mBufferSize.x / mH);
+        int j = (std::abs(radius.y) * mBufferSize.x / mH);
+
+        if (i >= mBufferSize.x || j >= mBufferSize.y) {
+            return res;
+        }
+
+        res = mGradBuffer[i][j];
+
+        if (radius.x < 0) {
+            res.x = -res.x;
+        }
+        if (radius.y < 0) {
+            res.y = -res.y;
+        }
+
+        return res;
+    }
+
+private:
+    float CalculateValue(float distance) {
         float r = std::abs(distance);
-        float q = r / supportRadius;
+        float q = r / mH;
         float q2 = q * q;
         float q3 = q * q2;
-        float result = 0.0f;
-        if (q < 0.5f)
-        {
-            result = 6.0f * (q3 - q2) + 1.0f;
-            result *= normalizationFactor;
-            return result;
+        float res = 0.0f;
+        if (q < 0.5f) {
+            res = 6.0f * (q3 - q2) + 1.0f;
+            res *= mSigma;
+            return res;
         }
-        else if (q >= 0.5f && q < 1.0f)
-        {
-            result = 1.0f - q;
-            result = std::pow(result, 3) * 2.0f;
-            result *= normalizationFactor;
-            return result;
+        else if (q >= 0.5f && q < 1.0f) {
+            res = 1.0f - q;
+            res = std::pow(res, 3) * 2.0f;
+            res *= mSigma;
+            return res;
         }
-        return result;
+        return res;
     }
 
-    // Calculate gradient factor for a given distance
-    float calculateGradientFactor(float distance)
-    {
-        float result = 0.0f;
-        if (distance < 1e-5)
-        {
-            return result;
+    glm::vec2 CalculateGrad(glm::vec2 radius) {
+        glm::vec2 res(0.0f, 0.0f);
+        float distance = glm::length(radius);
+        if (distance < 1e-5) {
+            return res;
         }
 
-        float q = distance / supportRadius;
+        float q = distance / mH;
+        glm::vec2 qGrad = radius / (mH * distance);
 
-        if (q < 0.5f)
-        {
-            result = 6.0f * (3.0f * q * q - 2.0f * q) * normalizationFactor / (supportRadius * distance);
-            return result;
+        if (q < 0.5f) {
+            res = 6.0f * (3.0f * q * q - 2.0f * q) * mSigma * qGrad;
+            return res;
         }
-        else if (q >= 0.5 && q < 1.0f)
-        {
-            result = -6.0f * std::powf(1.0f - q, 2) * normalizationFactor / (supportRadius * distance);
-            return result;
+        else if (q >= 0.5 && q < 1.0f) {
+            res = -6.0f * std::powf(1.0f - q, 2) * mSigma * qGrad;
+            return res;
         }
-        return result;
+        return res;
     }
 
-    float supportRadius;                           // Support radius
-    float supportRadiusSquared;                    // Support radius squared
-    float supportRadiusCubed;                      // Support radius cubed
-    float normalizationFactor;                     // Normalization factor
-    uint32_t bufferSize;                           // Buffer size
-    std::vector<glm::vec2> valueAndGradientBuffer; // Buffer for values and gradient factors
+private:
+    float mH;
+    float mH2;
+    float mSigma;
+    glm::uvec2 mBufferSize;
+    std::vector<std::vector<glm::vec2>> mGradBuffer;
+    std::vector<float> mValueBuffer;
 };
 
 /* ----------------- Particle System -------------------- */
 
-// Structure to hold particle information
-struct ParticleInfo
+struct NeighborInfo
 {
-    alignas(16) glm::vec3 position;
-    alignas(16) glm::vec3 velocity;
-    alignas(16) glm::vec3 acceleration;
-    alignas(4) float density;
-    alignas(4) float pressure;
-    alignas(4) float pressureOverDensitySquared;
-    alignas(4) uint32_t blockId;
+    int index;
+    float distance;
+    float distance2;
+    glm::vec2 radius;
 };
 
-class ParticleSystem
+class ParticalSystem
 {
 public:
-    ParticleSystem() {}
-    ~ParticleSystem() {}
+    ParticalSystem(){
 
-    /* ----------------- Physic Solver -------------------- */
-
-    void EulerIntegration()
-    {
-        for (auto &particle : particles)
-        {
-            particle.velocity += DELTA_T * particle.acceleration;
-            particle.velocity = glm::clamp(particle.velocity, glm::vec3(-MAX_VELOCITY), glm::vec3(MAX_VELOCITY));
-            particle.position += DELTA_T * particle.velocity;
-        }
-    }
-
-    void ComputeDensityAndPressure()
-    {
-        // Clear the densities and pressure before computation
-        for (auto &particle : particles)
-        {
-            particle.density = REFERENCE_DENSITY;
-            particle.pressure = 0.0f;
-        }
-
-        // Iterate over each particle to compute density
-        for (auto &block : blockOfParticles)
-        {
-            for (auto cur_particle : block.second)
-            {
-                for (auto neighbor_particle : block.second)
-                {
-                    if (cur_particle == neighbor_particle)
-                    {
-                        continue;
-                    }
-                    // compute all distintive pair of neighbouring particles
-                    glm::vec3 radius_ij = cur_particle->position - neighbor_particle->position;
-                    float distance_ij = glm::length(radius_ij);
-
-                    if (distance_ij < SUPPORT_RADIUS)
-                    {
-                        cur_particle->density += kernel.getValue(distance_ij / SUPPORT_RADIUS)[0];
-                    }
-                }
-
-                cur_particle->density *= (volume * REFERENCE_DENSITY);
-                // Ensure the fluid do not expand
-                cur_particle->density = std::max(cur_particle->density, REFERENCE_DENSITY);
-
-                // Calculate pressure using the equation of state
-                cur_particle->pressure = STIFFNESS_CONSTANT * (std::powf(cur_particle->density / REFERENCE_DENSITY, PRESSURE_EXPONENT) - 1.0f);
-
-                // Precompute pressure over density squared for later use in force calculations
-                cur_particle->pressureOverDensitySquared = cur_particle->pressure / (cur_particle->density * cur_particle->density);
-            }
-        }
     }
     
-    
-    // Compute Acceleration
-    void ComputeAcceleration()
-    {
+    ~ParticalSystem(){
 
-        for (auto it = particles.begin(); it != particles.end(); ++it)
-        {
-            // we add gravity here (initialize)
-            it->acceleration = GRAVITY_DIR * GRAVITY;
-        }
-
-        for (auto &block : blockOfParticles)
-        {
-            for (auto cur_particle : block.second)
-            {
-                const float DIM = 3.0f;
-                const float CONST_FACTOR = 2.0f * (DIM + 2.0f) * VISCOSITY_COEFFICIENT;
-                glm::vec3 viscosityForce = glm::vec3(0.0f);
-                glm::vec3 pressureForce = glm::vec3(0.0f);
-
-                for (auto other_particle : block.second)
-                {
-                    if (cur_particle == other_particle)
-                    {
-                        continue;
-                    }
-
-                    glm::vec3 radiusIj = cur_particle->position - other_particle->position;
-                    float distanceIj = glm::length(radiusIj);
-                    if (distanceIj <= SUPPORT_RADIUS)
-                    {
-                        float dotDvToRad = glm::dot(cur_particle->velocity - other_particle->velocity, radiusIj);
-                        float denom = distanceIj * distanceIj + 0.01f * SUPPORT_RADIUS * SUPPORT_RADIUS;
-                        glm::vec3 wGrad = kernel.getValue(distanceIj / SUPPORT_RADIUS)[1] * radiusIj;
-                        viscosityForce += (volume * REFERENCE_DENSITY / other_particle->density) * dotDvToRad * wGrad / denom;
-                        pressureForce += other_particle->density * (cur_particle->pressureOverDensitySquared + other_particle->pressureOverDensitySquared) * wGrad;
-                    }
-                }
-                cur_particle->acceleration += viscosityForce * CONST_FACTOR;
-                cur_particle->acceleration -= pressureForce * volume;
-            }
-        }
     }
 
-    void BoundaryCheck()
+    void SetContainerSize(glm::vec2 corner, glm::vec2 size)
     {
-        for (auto &particle : particles)
-        {
-            // Check x-axis
-            if (particle.position.x > upperBound.x)
-            {
-                particle.position.x = upperBound.x;
-                particle.velocity.x *= -VELOCITY_ATTENUATION;
-            }
-            else if (particle.position.x < lowerBound.x)
-            {
-                particle.position.x = lowerBound.x;
-                particle.velocity.x *= -VELOCITY_ATTENUATION;
-            }
+        mLowerBound = corner;
+        mUpperBound = corner + size;
+        mContainerCenter = corner + 0.5f * size;
 
-            // Check y-axis
-            if (particle.position.y > upperBound.y)
-            {
-                particle.position.y = upperBound.y;
-                particle.velocity.y *= -VELOCITY_ATTENUATION;
-            }
-            else if (particle.position.y < lowerBound.y)
-            {
-                particle.position.y = lowerBound.y;
-                particle.velocity.y *= -VELOCITY_ATTENUATION;
-            }
+        mBlockRowNum = floor(size.y / mSupportRadius);
+        mBlockColNum = floor(size.x / mSupportRadius);
+        mBlockSize = glm::vec2(size.x / mBlockColNum, size.y / mBlockRowNum);
 
-            // Check z-axis
-            if (particle.position.z > upperBound.z)
-            {
-                particle.position.z = upperBound.z;
-                particle.velocity.z *= -VELOCITY_ATTENUATION;
-            }
-            else if (particle.position.z < lowerBound.z)
-            {
-                particle.position.z = lowerBound.z;
-                particle.velocity.z *= -VELOCITY_ATTENUATION;
-            }
-        }
+        mPositions.clear();
+        mVelocity.clear();
+        mAccleration.clear();
+
+        mStartIndex = 0;
+
+        // mStartIndex += AddBoundary(mLowerBound, glm::vec2(size.x, mSupportRadius));
+        // mStartIndex += AddBoundary(glm::vec2(mLowerBound.x, mUpperBound.y - mSupportRadius), glm::vec2(size.x, mSupportRadius));
+        // mStartIndex += AddBoundary(glm::vec2(mLowerBound.x, mLowerBound.y + mSupportRadius), glm::vec2(mSupportRadius, size.y - 2.0f * mSupportRadius));
+        // mStartIndex += AddBoundary(glm::vec2(mUpperBound.x - mSupportRadius, mLowerBound.y + mSupportRadius), glm::vec2(mSupportRadius, size.y - 2.0f * mSupportRadius));
     }
 
-    /* ----------------- Misc functions -------------------- */
-
-    // Set container size and initialize blocks
-    void setContainerSize(glm::vec3 corner, glm::vec3 size)
+    int32_t AddFluidBlock(glm::vec2 corner, glm::vec2 size, glm::vec2 v0, float particalSpace)
     {
-        lowerBound = corner - SUPPORT_RADIUS + PARTICLE_DIAMETER;
-        upperBound = corner + size + SUPPORT_RADIUS - PARTICLE_DIAMETER;
-        containerCenter = (lowerBound + upperBound) / 2.0f;
-        size = upperBound - lowerBound;
+        glm::vec2 blockLowerBound = corner;
+        glm::vec2 blockUpperBound = corner + size;
 
-        // Number of blocks in each direction for computation
-        blockCount.x = floor(size.x / SUPPORT_RADIUS);
-        blockCount.y = floor(size.y / SUPPORT_RADIUS);
-        blockCount.z = floor(size.z / SUPPORT_RADIUS);
-
-        // Size of each block
-        blockSize = glm::vec3(size.x / blockCount.x, size.y / blockCount.y, size.z / blockCount.z);
-
-        particles.clear();
-    }
-
-    // Add a block of fluid particles
-    int32_t addFluidBlock(glm::vec3 corner, glm::vec3 size, glm::vec3 initialVelocity, float particleSpacing)
-    {
-        glm::vec3 blockLowerBound = corner;
-        glm::vec3 blockUpperBound = corner + size;
-
-        // Check if block is within container bounds
-        if (blockLowerBound.x < lowerBound.x ||
-            blockLowerBound.y < lowerBound.y ||
-            blockLowerBound.z < lowerBound.z ||
-            blockUpperBound.x > upperBound.x ||
-            blockUpperBound.y > upperBound.y ||
-            blockUpperBound.z > upperBound.z)
-        {
-            return 0;
-        }
-
-        // Number of particles in each direction
-        glm::uvec3 particleCount = glm::uvec3(size.x / particleSpacing, size.y / particleSpacing, size.z / particleSpacing);
-        std::vector<ParticleInfo> newParticles(particleCount.x * particleCount.y * particleCount.z);
-
-        // Initialize particle properties
-        int index = 0;
-        for (int x = 0; x < particleCount.x; x++)
-        {
-            for (int y = 0; y < particleCount.y; y++)
-            {
-                for (int z = 0; z < particleCount.z; z++)
-                {
-                    // populate vector newParticles with particles one by one
-                    float offsetX = (x + PCG32::randomFloat()) * particleSpacing;
-                    float offsetY = (y + PCG32::randomFloat()) * particleSpacing;
-                    float offsetZ = (z + PCG32::randomFloat()) * particleSpacing;
-                    newParticles[index].position = corner + glm::vec3(offsetX, offsetY, offsetZ);
-                    newParticles[index].blockId = getBlockIdByPosition(newParticles[index].position);
-                    newParticles[index].velocity = initialVelocity;
-                    index++;
-                }
-            }
-        }
-
-        particles.insert(particles.end(), newParticles.begin(), newParticles.end());
-        return newParticles.size();
-    }
-
-    // Get block ID based on particle position
-    uint32_t getBlockIdByPosition(glm::vec3 position)
-    {
-        if (position.x < lowerBound.x ||
-            position.y < lowerBound.y ||
-            position.z < lowerBound.z ||
-            position.x > upperBound.x ||
-            position.y > upperBound.y ||
-            position.z > upperBound.z)
+        if (blockLowerBound.x < mLowerBound.x ||
+            blockLowerBound.y < mLowerBound.y ||
+            blockUpperBound.x > mUpperBound.x ||
+            blockUpperBound.y > mUpperBound.y)
         {
             return -1;
         }
 
-        glm::vec3 deltaPosition = position - lowerBound;
-        uint32_t column = floor(deltaPosition.x / blockSize.x);
-        uint32_t row = floor(deltaPosition.y / blockSize.y);
-        uint32_t height = floor(deltaPosition.z / blockSize.z);
-        return computeHash(row, column, height);
-    }
+        int width = size.x / particalSpace;
+        int height = size.y / particalSpace;
 
-    void updateData()
-    {
+        std::vector<glm::vec2> position(width * height);
+        std::vector<glm::vec2> velocity(width * height, v0);
+        std::vector<glm::vec2> accleration(width * height, glm::vec2(0.0f, 0.0f));
 
-        // sort particles into blockOfParticles, key is computeHash()
-        blockOfParticles.clear();
-        for (auto it = particles.begin(); it != particles.end(); ++it)
+        int p = 0;
+        for (int i = 0; i < height; i++)
         {
-
-            unsigned int hashValue = getBlockIdByPosition(it->position);
-            blockOfParticles[hashValue].push_back(&(*it));
+            for (int j = 0; j < width; j++)
+            {
+                position[p] = corner + glm::vec2((j + 0.5) * particalSpace, (i + 0.5) * particalSpace);
+                if (i % 2)
+                {
+                    position[p].x += mParticalRadius;
+                }
+                p++;
+            }
         }
 
-        ComputeDensityAndPressure();
-        ComputeAcceleration();
-        EulerIntegration();
-        BoundaryCheck();
-        
+        mPositions.insert(mPositions.end(), position.begin(), position.end());
+        mVelocity.insert(mVelocity.end(), velocity.begin(), velocity.end());
+        mAccleration.insert(mAccleration.end(), accleration.begin(), accleration.end());
+        return position.size();
+    }
+
+    void SearchNeighbors()
+    {
+        BuildBlockStructure();
+
+        mNeighbors = std::vector<std::vector<NeighborInfo>>(mPositions.size(), std::vector<NeighborInfo>(0));
+
+        for (int i = mStartIndex; i < mPositions.size(); i++)
+        { // ���������Ӳ����ھ�
+            glm::vec2 deltePos = mPositions[i] - mLowerBound;
+            uint32_t bc = floor(deltePos.x / mBlockSize.x);
+            uint32_t br = floor(deltePos.y / mBlockSize.y);
+
+            int bIdi = GetBlockIdByPosition(mPositions[i]);
+
+            // ����������Block
+            for (int dr = -1; dr <= 1; dr++)
+            {
+                for (int dc = -1; dc <= 1; dc++)
+                {
+                    if (bc + dc < 0 || bc + dc >= mBlockColNum ||
+                        br + dr < 0 || br + dr >= mBlockRowNum)
+                    {
+                        continue;
+                    }
+
+                    int bIdj = bIdi + dr * mBlockColNum + dc;
+                    std::vector<int> &block = mBlocks[bIdj];
+                    for (int j : block)
+                    { // ��Block����������
+                        if (i == j)
+                        {
+                            continue;
+                        }
+                        NeighborInfo nInfo{};
+                        nInfo.radius = mPositions[i] - mPositions[j];
+                        nInfo.distance = glm::length(nInfo.radius);
+                        nInfo.distance2 = nInfo.distance * nInfo.distance;
+                        nInfo.index = j;
+                        if (nInfo.distance <= mSupportRadius)
+                        {
+                            mNeighbors[i].push_back(nInfo);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    size_t GetBlockIdByPosition(glm::vec2 position)
+    {
+        if (position.x < mLowerBound.x ||
+            position.y < mLowerBound.y ||
+            position.x > mUpperBound.x ||
+            position.y > mUpperBound.y)
+        {
+            return -1;
+        }
+
+        glm::vec2 deltePos = position - mLowerBound;
+        uint32_t c = floor(deltePos.x / mBlockSize.x);
+        uint32_t r = floor(deltePos.y / mBlockSize.y);
+        return r * mBlockColNum + c;
+    }
+
+    void BuildBlockStructure()
+    {
+        mBlocks = std::vector<std::vector<int>>(mBlockColNum * mBlockRowNum, std::vector<int>(0));
+
+        for (int i = 0; i < mPositions.size(); i++)
+        { // �������ӷ����Լ��ļ�
+            int bId = GetBlockIdByPosition(mPositions[i]);
+            mBlocks[bId].push_back(i);
+        }
+    }
+
+private:
+    int32_t AddBoundary(glm::vec2 corner, glm::vec2 size)
+    {
+        float space = mParticalRadius / 4.0f;
+        int rows = floor(size.y / space);
+        int cols = floor(size.x / space);
+
+        float rowOffset = (size.y - ((float)rows - 1.0f) * space) / 2.0f;
+        float colOffset = (size.x - ((float)cols - 1.0f) * space) / 2.0f;
+
+        std::vector<glm::vec2> position(rows * cols);
+        std::vector<glm::vec2> velocity(rows * cols, glm::vec2(0.0f, 0.0f));
+        std::vector<glm::vec2> accleration(rows * cols, glm::vec2(0.0f, 0.0f));
+
+        int p = 0;
+        for (int i = 0; i < rows; i++)
+        {
+            for (int j = 0; j < cols; j++)
+            {
+                float x = colOffset + j * space;
+                float y = rowOffset + i * space;
+                position[p] = corner + glm::vec2(x, y);
+                p++;
+            }
+        }
+
+        mPositions.insert(mPositions.end(), position.begin(), position.end());
+        mVelocity.insert(mVelocity.end(), velocity.begin(), velocity.end());
+        mAccleration.insert(mAccleration.end(), accleration.begin(), accleration.end());
+        return position.size();
     }
 
 public:
-    // Particle parameters
-    float supportRadius = SUPPORT_RADIUS; // Support radius
-    float supportRadiusSquared = supportRadius * supportRadius;
-    float particleRadius = PARTICLE_RADIUS; // Particle radius
-    float particleDiameter = PARTICLE_DIAMETER;
-    float volume = std::pow(particleDiameter, 3);       // Volume
-    float mass = REFERENCE_DENSITY * volume;            // Mass
-    float viscosityCoefficient = VISCOSITY_COEFFICIENT; // Viscosity coefficient
-    float pressureExponent = PRESSURE_EXPONENT;         // Pressure exponent
-    int stiffnessConstant = STIFFNESS_CONSTANT;         // Stiffness
-    std::vector<ParticleInfo> particles;                // the particles lives here
+    // 粒子参数
+    float mSupportRadius = 0.025; // 支撑半径
+    float mSupportRadius2 = mSupportRadius * mSupportRadius;
+    float mParticalRadius = 0.005; // 粒子半径
+    float mParticalDiameter = 2.0 * mParticalRadius;
+    float mVolume = 0.8 * mParticalDiameter * mParticalDiameter; // 体积
+    float mMass = Para::density0 * mVolume;                      // 质量
+    float mViscosity = 0.01;                                     // 粘度系数
+    float mExponent = 7.0f;                                      // 压力指数
+    int mStiffness = 50.0f;                                      // 刚度
 
-    // each blocks of particles, key is from computeHash().
-    std::unordered_map<unsigned int, std::vector<ParticleInfo *>> blockOfParticles;
+    int mStartIndex = 0;
+    std::vector<glm::vec2> mPositions;
+    std::vector<glm::vec2> mAccleration;
+    std::vector<glm::vec2> mVelocity;
+    std::vector<float> mDensity;
+    std::vector<float> mPressure;
+    std::vector<std::vector<NeighborInfo>> mNeighbors;
 
-    // Container parameters
-    glm::vec3 lowerBound = glm::vec3(FLT_MAX);
-    glm::vec3 upperBound = glm::vec3(-FLT_MAX);
-    glm::vec3 containerCenter = glm::vec3(0.0f);
-    glm::uvec3 blockCount = glm::uvec3(0); // Number of blocks in XYZ directions
-    glm::vec3 blockSize = glm::vec3(0.0f);
+    // 容器参数
+    glm::vec2 mLowerBound = glm::vec2(-1.0f, -1.0f);
+    glm::vec2 mUpperBound = glm::vec2(1.0f, 1.0f);
+    glm::vec2 mContainerCenter = glm::vec2(0.0f, 0.0f);
+    std::vector<std::vector<int>> mBlocks;
+    glm::vec2 mBlockSize = glm::vec2(0.5, 0.5);
+    uint32_t mBlockRowNum = 4;
+    uint32_t mBlockColNum = 4;
+};
 
-    // Smoothing kernel function
-    CubicSplineKernel kernel = CubicSplineKernel(supportRadius);
+class Solver
+{
+public:
+    explicit Solver(ParticalSystem& ps) : mPs(ps), mW(ps.mSupportRadius)
+    {
+
+    }
+
+    ~Solver(){
+
+    }
+
+    void Iterate() {
+        UpdateDensityAndPressure();
+        InitAccleration();
+        UpdateViscosityAccleration();
+        UpdatePressureAccleration();
+        EulerIntegrate();
+        BoundaryCondition();
+        //std::cout << "solve time = " << timer.GetTime() << std::endl;
+    }
+
+private:
+    void UpdateDensityAndPressure() {
+        mPs.mDensity = std::vector<float>(mPs.mPositions.size(), Para::density0);
+        mPs.mPressure = std::vector<float>(mPs.mPositions.size(), 0.0f);
+        for (int i = 0; i < mPs.mPositions.size(); i++) {    // 对所有粒子
+            if (mPs.mNeighbors.size() != 0) {    // 有邻居
+                std::vector<NeighborInfo>& neighbors = mPs.mNeighbors[i];
+                float density = 0;
+                for (auto& nInfo : neighbors) {
+                    density += mW.Value(nInfo.distance);
+                }
+                density *= (mPs.mVolume * Para::density0);
+                mPs.mDensity[i] = density;
+                mPs.mDensity[i] = std::max(density, Para::density0);        // 禁止膨胀
+            }
+            // 更新压强
+            mPs.mPressure[i] = mPs.mStiffness* (std::powf(mPs.mDensity[i] / Para::density0, mPs.mExponent) - 1.0f);
+        }
+    }
+
+    void InitAccleration() {
+        std::fill(mPs.mAccleration.begin() + mPs.mStartIndex, mPs.mAccleration.end(), glm::vec2(0.0f, -Para::gravity));
+    }
+
+    void UpdateViscosityAccleration() {
+        float dim = 2.0f;
+        float constFactor = 2.0f * (dim + 2.0f) * mPs.mViscosity;
+        for (int i = mPs.mStartIndex; i < mPs.mPositions.size(); i++) {    // 对所有粒子
+            if (mPs.mNeighbors.size() != 0) {    // 有邻居
+                std::vector<NeighborInfo>& neighbors = mPs.mNeighbors[i];
+                glm::vec2 viscosityForce(0.0f, 0.0f);
+                for (auto& nInfo : neighbors) {
+                    int j = nInfo.index;
+                    float dotDvToRad = glm::dot(mPs.mVelocity[i] - mPs.mVelocity[j], nInfo.radius);
+
+                    float denom = nInfo.distance2 + 0.01f * mPs.mSupportRadius2;
+                    viscosityForce += (mPs.mMass / mPs.mDensity[j]) * dotDvToRad * mW.Grad(nInfo.radius) / denom;
+                }
+                viscosityForce *= constFactor;
+                mPs.mAccleration[i] += viscosityForce;
+            }
+        }
+    }
+    void UpdatePressureAccleration() {
+        std::vector<float> pressDivDens2(mPs.mPositions.size(), 0);        // p/(dens^2)
+        for (int i = 0; i < mPs.mPositions.size(); i++) {
+            pressDivDens2[i] = mPs.mPressure[i] / std::powf(mPs.mDensity[i], 2);
+        }
+
+        for (int i = mPs.mStartIndex; i < mPs.mPositions.size(); i++) {    // 对所有粒子
+            if (mPs.mNeighbors.size() != 0) {    // 有邻居
+                std::vector<NeighborInfo>& neighbors = mPs.mNeighbors[i];
+                glm::vec2 pressureForce(0.0f, 0.0f);
+                for (auto& nInfo : neighbors) {
+                    int j = nInfo.index;
+                    pressureForce += mPs.mDensity[j] * (pressDivDens2[i] + pressDivDens2[j]) * mW.Grad(nInfo.radius);
+                }
+                mPs.mAccleration[i] -= pressureForce * mPs.mVolume;
+            }
+        }
+    }
+
+    void EulerIntegrate() {
+        for (int i = mPs.mStartIndex; i < mPs.mPositions.size(); i++) {    // 对所有粒子
+            mPs.mVelocity[i] += Para::dt * mPs.mAccleration[i];
+            mPs.mVelocity[i] = glm::clamp(mPs.mVelocity[i], glm::vec2(-100.0f), glm::vec2(100.0f));
+            mPs.mPositions[i] += Para::dt * mPs.mVelocity[i];
+        }
+    }
+
+    void BoundaryCondition() {
+        for (int i = 0; i < mPs.mPositions.size(); i++) {    // 对所有粒子
+            glm::vec2& position = mPs.mPositions[i];
+            bool invFlag = false;
+            if (position.y < mPs.mLowerBound.y + mPs.mSupportRadius) {
+                mPs.mVelocity[i].y = std::abs(mPs.mVelocity[i].y);
+                invFlag = true;
+            }
+
+            if (position.y > mPs.mUpperBound.y - mPs.mSupportRadius) {
+                mPs.mVelocity[i].y = -std::abs(mPs.mVelocity[i].y);
+                invFlag = true;
+            }
+
+            if (position.x < mPs.mLowerBound.x + mPs.mSupportRadius) {
+                mPs.mVelocity[i].x = std::abs(mPs.mVelocity[i].x);
+                invFlag = true;
+            }
+
+            if (position.x > mPs.mUpperBound.x - mPs.mSupportRadius) {
+                mPs.mVelocity[i].x = -std::abs(mPs.mVelocity[i].x);
+                invFlag = true;
+            }
+
+            if (invFlag) {
+                mPs.mPositions[i] += Para::dt * mPs.mVelocity[i];
+                mPs.mVelocity[i] = glm::clamp(mPs.mVelocity[i], glm::vec2(-100.0f), glm::vec2(100.0f));    // 速度限制
+            }
+        }
+    }
+
+private:
+    ParticalSystem &mPs;
+    WCubicSpline2d mW;
 };
 
 #endif // !PARTICLE_SYSTEM_H
