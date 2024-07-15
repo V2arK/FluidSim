@@ -387,7 +387,7 @@ int main()
 	ParticleSystem ps;
 	ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(2.0, 2.0));
 	ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.4, 0.4), glm::vec2(-2.0f, -10.0f), 0.01f * 0.7f);
-	std::cout << "partical num = " << ps.mPositions.size() << std::endl;
+	std::cout << "partical num = " << ps.particlePositions_.size() << std::endl;
 
 	// Main render loop
 	while (!glfwWindowShouldClose(window))
@@ -401,11 +401,10 @@ int main()
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		// update particles
-		ps.SearchNeighbors();
 		ps.Iterate();
 
 		// Render the spheres
-		render(shaderProgram, vao, ps.mPositions);
+		render(shaderProgram, vao, ps.particlePositions_);
 
 		// Swap the front and back buffers
 		glfwSwapBuffers(window);
