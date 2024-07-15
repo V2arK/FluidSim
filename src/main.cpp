@@ -405,7 +405,7 @@ int main()
 
 		// update particles
 		ps.updateData();
-
+		
 		// Render the spheres
 		render(shaderProgram, vao, ps.particles);
 

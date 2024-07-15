@@ -14,7 +14,7 @@ const float PARTICLE_DIAMETER = PARTICLE_RADIUS * 2.0f; // Diameter of a particl
 const float GRAVITY = 9.8f;                             // Gravitational acceleration
 const glm::vec3 GRAVITY_DIR = glm::vec3(0.0, -1.0, 0.0);
 const float REFERENCE_DENSITY = 1000.0f;   // Reference density
-const float STIFFNESS_CONSTANT = 5.0f;    // Stiffness constant for pressure calculation
+const float STIFFNESS_CONSTANT = 50.0f;    // Stiffness constant for pressure calculation
 const float PRESSURE_EXPONENT = 7.0f;      // Exponent for the equation of state
 const float VISCOSITY_COEFFICIENT = 8e-6f; // Viscosity coefficient
 const float DELTA_T = 0.003f;              // delta for euler intergration
@@ -225,7 +225,7 @@ public:
 
                     if (distance_ij < SUPPORT_RADIUS)
                     {
-                        cur_particle->density += kernel.calculateValue(distance_ij);
+                        cur_particle->density += kernel.getValue(distance_ij / SUPPORT_RADIUS)[0];
                     }
                 }
 
@@ -275,7 +275,7 @@ public:
                     {
                         float dotDvToRad = glm::dot(cur_particle->velocity - other_particle->velocity, radiusIj);
                         float denom = distanceIj * distanceIj + 0.01f * SUPPORT_RADIUS * SUPPORT_RADIUS;
-                        float wGrad = kernel.calculateGradientFactor(distanceIj);
+                        glm::vec3 wGrad = kernel.getValue(distanceIj / SUPPORT_RADIUS)[1] * radiusIj;
                         viscosityForce += (volume * REFERENCE_DENSITY / other_particle->density) * dotDvToRad * wGrad / denom;
                         pressureForce += other_particle->density * (cur_particle->pressureOverDensitySquared + other_particle->pressureOverDensitySquared) * wGrad;
                     }
@@ -428,8 +428,9 @@ public:
 
         ComputeDensityAndPressure();
         ComputeAcceleration();
-        BoundaryCheck();
         EulerIntegration();
+        BoundaryCheck();
+        
     }
 
 public:
