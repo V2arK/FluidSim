@@ -648,10 +648,10 @@ public:
     std::vector<float> particlePressures_;             // Pressures of particles
     std::vector<std::vector<NeighborInfo>> neighbors_; // Neighbor information for particles
 
-    glm::vec2 lowerBound_ = glm::vec2(-1.0f, -0.5f);    // Lower bound of the container
-    glm::vec2 upperBound_ = glm::vec2(1.0f, 0.5f);      // Upper bound of the container
+    glm::vec2 lowerBound_;    // Lower bound of the container
+    glm::vec2 upperBound_;      // Upper bound of the container
     std::vector<std::vector<unsigned int>> blocks_;     // Blocks for spatial partitioning
-    glm::vec2 blockSize_ = glm::vec2(0.5f, 0.5f);       // Size of each block
+    glm::vec2 blockSize_;       // Size of each block
     uint32_t blockRowCount_ = 4;                        // Number of block rows
     uint32_t blockColumnCount_ = 4;                     // Number of block columns
 };
