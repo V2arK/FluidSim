@@ -32,19 +32,15 @@ For specific installation instructions, refer to the [OpenGL Starter README](htt
     ```
 
 
-## Project Structure
+## Main Project Structure
 
 ```plaintext
 cs488/
 ├── assets/
 │   └── shaders/
-├── cmake/
 ├── src/
 │   ├── main.cpp
-│   └── ...
-├── .gitignore
-├── CMakeLists.txt
-├── LICENSE
+│   └── pbd.h
 └── README.md
 ```
 
