@@ -213,7 +213,7 @@ public:
 
     unsigned int AddFluidBlock(glm::vec2 blockLowerBound, glm::vec2 blockUpperBound, glm::vec2 initialVelocity = glm::vec2(0.0f, 0.0f), float particleSpacing = 0.007f)
     {
-        
+
         glm::vec2 size = blockUpperBound - blockLowerBound;
 
         if (blockLowerBound.x < lowerBound_.x ||
@@ -336,6 +336,16 @@ public:
         uint32_t x = static_cast<uint32_t>(floor(deltaPosition.x / blockSize_.x));
         uint32_t y = static_cast<uint32_t>(floor(deltaPosition.y / blockSize_.y));
         return y * blockColumnCount_ + x;
+    }
+
+    void clearParticle()
+    {
+         particlePositions_.clear();
+        particleAccelerations_.clear();
+        particleVelocities_.clear();
+        particleDensities_.clear();
+        particlePressures_.clear();
+        neighbors_.clear();
     }
 
     /* ----------------- SPH Implementation -------------------- */

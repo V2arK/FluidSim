@@ -17,7 +17,7 @@
 #include "pbd.h"
 
 // Camera parameters for setting up the view matrix
-glm::vec3 cameraPos = glm::vec3(0.0f, -0.2f, 2.0f);  // Camera position
+glm::vec3 cameraPos = glm::vec3(0.0f, -0.2f, 2.0f);	  // Camera position
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f); // Camera direction
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);	  // Camera up vector
 float yaw = -90.0f;									  // Initial yaw angle
@@ -35,6 +35,9 @@ float mouseSensitivity = 0.1f;
 // Define parameters for the sphere
 int sectorCount = 10;
 int stackCount = 5;
+
+// Particle system
+ParticleSystem ps;
 
 // Global vector to store sphere indices for rendering
 std::vector<GLuint> sphereIndices;
@@ -56,6 +59,7 @@ static void keyCallback(GLFWwindow *window, int key, int scancode, int action, i
 
 	float cameraSpeed = movementSpeed * deltaTime; // Adjust camera speed based on frame time
 
+	/*
 	// Move camera in the direction it's facing
 	if (key == GLFW_KEY_W)
 		cameraPos += cameraSpeed * cameraFront;
@@ -66,6 +70,9 @@ static void keyCallback(GLFWwindow *window, int key, int scancode, int action, i
 		cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
 	if (key == GLFW_KEY_D)
 		cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+	*/
+	if (key == GLFW_KEY_C)
+		ps.clearParticle();
 }
 
 // Callback function for mouse button input (not used here but defined for completeness)
@@ -380,14 +387,12 @@ int main()
 		ASSETS_PATH "/shaders/test.vert.glsl",
 		ASSETS_PATH "/shaders/test.frag.glsl");
 
+	// Particle system initialization
+	ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(1.0, 0.5));
+	// ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.2, 0.2));
+
 	// Create buffers for the sphere
 	GLuint vao = createBuffersForSphere(PARTICLE_RADIUS + 0.002f, sectorCount, stackCount);
-
-	// setup particle system
-	ParticleSystem ps;
-	ps.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(1.0, 0.5));
-	ps.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.2, 0.2));
-	std::cout << "partical num = " << ps.particlePositions_.size() << std::endl;
 
 	// Main render loop
 	while (!glfwWindowShouldClose(window))
@@ -399,6 +404,8 @@ int main()
 
 		// Clear the color and depth buffers
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		ps.AddFluidBlock(glm::vec2(-0.03f, 0.47f), glm::vec2(0.03f, 0.49f), glm::vec2(0.0f, 10.0f), 0.02f);
 
 		// update particles
 		ps.Iterate();
