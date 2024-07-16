@@ -68,17 +68,19 @@ I then add supports to movements using `WSAD` and camera operation with mouse, c
 
 #### What is Smooth Particle Hydrodynamics?
 
-Smoothed Particle Hydrodynamics (SPH) is a computational method used for simulating fluid flows. It is a mesh-free Lagrangian method where the fluid is represented by particles. Each particle carries properties such as mass, position, velocity, and density, which are smoothed using a kernel function. In this implementation, I use a Cubic Spline Kernel. The Cubic Spline Kernel is a popular choice for SPH simulations due to its smoothness and compact support. The kernel function \( W \) is defined such that it has a finite range, making computations efficient.
+Smoothed Particle Hydrodynamics (SPH) is a computational method used for simulating fluid flows. It is a mesh-free Lagrangian method where the fluid is represented by particles. Each particle carries properties such as mass, position, velocity, and density, which are smoothed using a kernel function. In this implementation, I use a Cubic Spline Kernel. The Cubic Spline Kernel is a popular choice for SPH simulations due to its smoothness and compact support. The kernel function $ W $ is defined such that it has a finite range, making computations efficient.
 
-The Cubic Spline Kernel \( W(r, h) \) is defined as:
+The Cubic Spline Kernel $W(r, h)$ is defined as:
 
-\[ W(r, h) = \alpha_d \begin{cases} 
+$$ 
+W(r, h) = \alpha_d \begin{cases} 
 1 - \frac{3}{2}q^2 + \frac{3}{4}q^3 & \text{if } 0 \leq q < 1 \\
 \frac{1}{4}(2 - q)^3 & \text{if } 1 \leq q < 2 \\
 0 & \text{otherwise}
-\end{cases} \]
+\end{cases} 
+$$
 
-where \( q = \frac{r}{h} \) and \( \alpha_d \) is a normalization constant dependent on the dimensionality \( d \). In our case, it's 2.
+where $q = \frac{r}{h}$ and $\alpha_d$ is a normalization constant dependent on the dimensionality $d$. In our case, it's 2.
 
 The detail deriviation of the formula I am using is from [this slide](https://github.com/taichiCourse01/taichiCourse01/blob/main/material/10_fluid_lagrangian.pdf).
 
