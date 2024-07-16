@@ -2,9 +2,18 @@
 
 ## Overview
 
+![image](screenshots/2d.gif)
+![image](screenshots/3d.gif)
+
 This project, titled "Position Based Dynamics Fluid Simulator," aims to develop a comprehensive and versatile fluid simulator using . By integrating the Smoothed Particle Hydrodynamics (SPH) with the use of OpenGL for rendering, the simulator strives to achieve high fidelity in modeling fluid behavior in real-time. 
 
 It is based on the OpenGL starter template provided by [Adrian Derstroff's OpenGL Starter](https://github.com/adrianderstroff/opengl-starter), which is released under the MIT license. The `opengl-starter` project offers a basic framework for compiling and managing various libraries required for OpenGL development.
+
+## Controls
+
+`C` - Clear all particles
+`2` - Switch to 2D simulation
+`3` - Switch to 3D simulation
 
 ## Prerequisites
 
@@ -57,8 +66,6 @@ I then add supports to movements using `WSAD` and camera operation with mouse, c
 
 ### Fluid Simulation (Force Based Smooth Particle Hydrodynamic)
 
-![image](screenshots/sc.GIF)
-
 #### What is Smooth Particle Hydrodynamics?
 
 Smoothed Particle Hydrodynamics (SPH) is a computational method used for simulating fluid flows. It is a mesh-free Lagrangian method where the fluid is represented by particles. Each particle carries properties such as mass, position, velocity, and density, which are smoothed using a kernel function. In this implementation, I use a Cubic Spline Kernel. The Cubic Spline Kernel is a popular choice for SPH simulations due to its smoothness and compact support. The kernel function \( W \) is defined such that it has a finite range, making computations efficient.
@@ -82,11 +89,29 @@ All of my implementation related to Smooth particle hydrodynamics is inside `fbh
 ```
 ParticleSystem
 |
-├── CubicSplineKernel
+├── CubicSplineKernel2D
 │   ├── Value()
 │   ├── Gradient()
 |
-├── ParticleSystem
+├── ParticleSystem2D
+│   ├── Constructor and Destructor
+│   ├── SetContainerSize(
+│   ├── AddFluidBlock()
+│   ├── clearParticle()
+│   ├── Iterate()
+│       ├── ResetAcceleration()
+│       ├── GridSearch()
+│       ├── DensityAndPressure()
+│       ├── ViscosityAcceleration()
+│       ├── PressureAcceleration()
+│       ├── MoveStep()
+│       ├── CheckBoundary()
+|
+├── CubicSplineKernel3D
+│   ├── Value()
+│   ├── Gradient()
+|
+├── ParticleSystem3D
 │   ├── Constructor and Destructor
 │   ├── SetContainerSize(
 │   ├── AddFluidBlock()
@@ -103,9 +128,13 @@ ParticleSystem
 
 It contains a `ParticleSystem` for simulating fluid dynamics using the Smoothed Particle Hydrodynamics (SPH) method. Key features include physical constants for fluid properties, a random number generator for particle initialization, and a `CubicSplineKernel` for calculating smoothing functions. The `ParticleSystem` class manages particle properties such as position, velocity, acceleration, density, and pressure. It supports multi-threaded neighbor search and SPH computations, including density and pressure updates, viscosity and pressure force calculations, and boundary condition applications. 
 
+Both 2D and 3D varients are based on the same algorithm, the only difference being the cubic spline kernel is calculate differently.
+
 #### Implementation
 
 ![image](screenshots/pipeline.png)
+
+We will base our discussion on the 2D version, but 3D version works the same, just by considering an additional axis.
 
 The main loop for the physic sumulation lies in `Iterate()`. 
 
