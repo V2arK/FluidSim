@@ -32,6 +32,8 @@ float lastFrame = 0.0f;								  // Time of last frame
 float movementSpeed = 10.0f;
 float mouseSensitivity = 0.1f;
 
+bool display2D = true;
+
 // Define parameters for the sphere
 int sectorCount = 10;
 int stackCount = 5;
@@ -77,7 +79,15 @@ static void keyCallback(GLFWwindow *window, int key, int scancode, int action, i
 		ps2.clearParticle();
 		ps3.clearParticle();
 	}
-		
+	if (key == GLFW_KEY_2)
+	{
+		display2D = true;
+	} else if (key == GLFW_KEY_3)
+	{
+		display2D = false;
+	}
+
+
 }
 
 // Callback function for mouse button input (not used here but defined for completeness)
@@ -427,13 +437,13 @@ int main()
 		ASSETS_PATH "/shaders/test.frag.glsl");
 
 	// Particle system initialization
-	// ps2.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(1.0, 0.5));
+	ps2.SetContainerSize(glm::vec2(-1.0, -1.0), glm::vec2(1.0, 0.5));
 	// ps2.AddFluidBlock(glm::vec2(-0.2, -0.2), glm::vec2(0.2, 0.2));
 
-	ps3.SetContainerSize(glm::vec3(-1, -1, -1), glm::vec3(1, 0.5, 0));
-	//ps3.AddFluidBlock(glm::vec3(0, 0, -0.5), glm::vec3(0.1, 0.1, -0.4), glm::vec3(0, -9.8f, 0));
-	//ps3.AddFluidBlock(glm::vec3(-0.25, 0.9, -0.45), glm::vec3(0.25, 0.95, -0.55), glm::vec3(0, -9.8f, 0));
-	// Create buffers for the sphere
+	ps3.SetContainerSize(glm::vec3(-0.25, -1, -0.75), glm::vec3(0.25, 0.5, -0.25));
+	// ps3.AddFluidBlock(glm::vec3(0, 0, -0.5), glm::vec3(0.1, 0.1, -0.4), glm::vec3(0, -9.8f, 0));
+	// ps3.AddFluidBlock(glm::vec3(-0.25, 0.9, -0.45), glm::vec3(0.25, 0.95, -0.55), glm::vec3(0, -9.8f, 0));
+	//  Create buffers for the sphere
 	GLuint vao = createBuffersForSphere(PARTICLE_RADIUS + 0.002f, sectorCount, stackCount);
 
 	// Main render loop
@@ -447,16 +457,26 @@ int main()
 		// Clear the color and depth buffers
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		// ps2.AddFluidBlock(glm::vec2(-0.03f, 0.47f), glm::vec2(0.03f, 0.49f), glm::vec2(0.0f, 10.0f), 0.02f);
-		// update particles
-		// ps2.Iterate();
+		if (display2D)
+		{
+			ps2.AddFluidBlock(glm::vec2(-0.03f, 0.47f), glm::vec2(0.03f, 0.49f), glm::vec2(0.0f, 10.0f), 0.02f);
+			// update particles
+			ps2.Iterate();
 
-		ps3.AddFluidBlock(glm::vec3(0, 0, -0.46), glm::vec3(0.1, 0.03, -0.4), glm::vec3(0, -9.8f, 0), 0.02f);
-		ps3.Iterate();
+			// Render the spheres
+			// render(shaderProgram, vao, ps2.particlePositions_);
+			render(shaderProgram, vao, ps2.particlePositions_);
+		}
+		else
+		{
+			ps3.AddFluidBlock(glm::vec3(-0.03, 0, -0.46), glm::vec3(0.03, 0.03, -0.43), glm::vec3(0, -15.8f, 0), 0.02f);
+			// update particles
+			ps3.Iterate();
 
-		// Render the spheres
-		//render(shaderProgram, vao, ps2.particlePositions_);
-		render(shaderProgram, vao, ps3.particlePositions_);
+			// Render the spheres
+			// render(shaderProgram, vao, ps2.particlePositions_);
+			render(shaderProgram, vao, ps3.particlePositions_);
+		}
 
 		// Swap the front and back buffers
 		glfwSwapBuffers(window);
