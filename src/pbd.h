@@ -340,7 +340,7 @@ public:
 
     void clearParticle()
     {
-         particlePositions_.clear();
+        particlePositions_.clear();
         particleAccelerations_.clear();
         particleVelocities_.clear();
         particleDensities_.clear();
@@ -352,9 +352,9 @@ public:
 
     void Iterate()
     {
+        ResetAcceleration();           // Initialize accelerations of particles
         SearchNeighbors();             // build neighbour
         UpdateDensityAndPressure();    // Update densities and pressures of particles
-        InitAcceleration();            // Initialize accelerations of particles
         UpdateViscosityAcceleration(); // Update accelerations due to viscosity
         UpdatePressureAcceleration();  // Update accelerations due to pressure
         EulerIntegrate();              // Integrate positions and velocities using Euler method
@@ -406,7 +406,7 @@ public:
         }
     }
 
-    void InitAcceleration()
+    void ResetAcceleration()
     {
         std::fill(particleAccelerations_.begin() + 0, particleAccelerations_.end(), glm::vec2(0.0f, -GRAVITY)); // Initialize accelerations to gravity
     }
