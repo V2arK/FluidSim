@@ -55,7 +55,7 @@ I then add supports to movements using `WSAD` and camera operation with mouse, c
 
 ![image](/screenshots/sc2.png)
 
-### Fluid Simulation (Smoothed-particle dynamics)
+### Fluid Simulation `Smoothed Particle (hydro)Dynamics`
 
 The structure of `pbd.h` can be summarized as:
 
@@ -73,10 +73,10 @@ ParticleSystem
 │   ├── clearParticle()
 │   ├── Iterate()
 │       ├── ResetAcceleration()
-│       ├── SearchNeighbors()
-│       ├── UpdateDensityAndPressure()
-│       ├── UpdateViscosityAcceleration()
-│       ├── UpdatePressureAcceleration()
-│       ├── EulerIntegrate()
-│       ├── ApplyBoundaryConditions()
+│       ├── GridSearch()
+│       ├── DensityAndPressure()
+│       ├── ViscosityAcceleration()
+│       ├── PressureAcceleration()
+│       ├── MoveStep()
+│       ├── CheckBoundary()
 ```

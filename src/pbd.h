@@ -247,7 +247,7 @@ public:
         return positions.size();
     }
 
-    void SearchNeighbors()
+    void GridSearch()
     {
         blocks_ = std::vector<std::vector<unsigned int>>(blockColumnCount_ * blockRowCount_, std::vector<unsigned int>(0));
 
@@ -353,15 +353,15 @@ public:
     void Iterate()
     {
         ResetAcceleration();           // Initialize accelerations of particles
-        SearchNeighbors();             // build neighbour
-        UpdateDensityAndPressure();    // Update densities and pressures of particles
-        UpdateViscosityAcceleration(); // Update accelerations due to viscosity
-        UpdatePressureAcceleration();  // Update accelerations due to pressure
-        EulerIntegrate();              // Integrate positions and velocities using Euler method
-        ApplyBoundaryConditions();     // Apply boundary conditions to particles
+        GridSearch();             // build neighbour
+        DensityAndPressure();    // Update densities and pressures of particles
+        ViscosityAcceleration(); // Update accelerations due to viscosity
+        PressureAcceleration();  // Update accelerations due to pressure
+        MoveStep();              // Integrate positions and velocities using Euler method
+        CheckBoundary();     // Apply boundary conditions to particles
     }
 
-    void UpdateDensityAndPressure()
+    void DensityAndPressure()
     {
         particleDensities_.assign(particlePositions_.size(), REFERENCE_DENSITY); // Initialize densities to reference value
         particlePressures_.assign(particlePositions_.size(), 0.0f);              // Initialize pressures to zero
@@ -411,7 +411,7 @@ public:
         std::fill(particleAccelerations_.begin() + 0, particleAccelerations_.end(), glm::vec2(0.0f, -GRAVITY)); // Initialize accelerations to gravity
     }
 
-    void UpdateViscosityAcceleration()
+    void ViscosityAcceleration()
     {
         float dimension = 2.0f;                                                    // Dimensionality of the simulation
         float viscosityFactor = 2.0f * (dimension + 2.0f) * VISCOSITY_COEFFICIENT; // Constant factor for viscosity
@@ -456,7 +456,7 @@ public:
         }
     }
 
-    void UpdatePressureAcceleration()
+    void PressureAcceleration()
     {
         std::vector<float> pressureOverDensitySquared(particlePositions_.size(), 0);
 
@@ -524,7 +524,7 @@ public:
         }
     }
 
-    void EulerIntegrate()
+    void MoveStep()
     {
 
         std::vector<std::thread> threads;
@@ -558,7 +558,7 @@ public:
         }
     }
 
-    void ApplyBoundaryConditions()
+    void CheckBoundary()
     {
 
         std::vector<std::thread> threads;
