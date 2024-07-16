@@ -14,7 +14,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "pbd.h"
+#include "fbh.h"
 
 // Camera parameters for setting up the view matrix
 glm::vec3 cameraPos = glm::vec3(0.0f, -0.2f, 2.0f);	  // Camera position

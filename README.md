@@ -40,7 +40,7 @@ cs488/
 │   └── shaders/
 ├── src/
 │   ├── main.cpp
-│   └── pbd.h
+│   └── fbh.h
 └── README.md
 ```
 
@@ -55,7 +55,7 @@ I then add supports to movements using `WSAD` and camera operation with mouse, c
 
 ![image](/screenshots/sc2.png)
 
-### Fluid Simulation
+### Fluid Simulation (Force Based Smooth Particle Hydrodynamic)
 
 ![image](screenshots/sc.GIF)
 
@@ -77,7 +77,7 @@ The detail deriviation of the formula I am using is from [this slide](https://gi
 
 #### Code structure
 
-All of my implementation related to Smooth particle hydrodynamics is inside `pbd.h`.  The structure of it can be summarized as:
+All of my implementation related to Smooth particle hydrodynamics is inside `fbh.h`.  The structure of it can be summarized as:
 
 ```
 ParticleSystem
