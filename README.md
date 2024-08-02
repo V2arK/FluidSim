@@ -60,9 +60,9 @@ Firstly, since the starter code I used has only an rasterizer for one triangle, 
 
 I then add supports to movements using `WSAD` and camera operation with mouse, clipping and depth buffer, as well as the drawing of spheres, which conclude the basic rasterization using `OpenGL`.
 
-![image](/screenshots/sc1.png)
+![image](screenshots/sc1.png)
 
-![image](/screenshots/sc2.png)
+![image](screenshots/sc2.png)
 
 ### Fluid Simulation (Force Based Smooth Particle Hydrodynamic)
 
